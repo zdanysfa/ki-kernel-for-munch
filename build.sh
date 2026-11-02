@@ -416,7 +416,7 @@ if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ] || [ "$TARGET_OS" ==
     apply_debug_config
     make $MAKE_ARGS olddefconfig
     check_debug_config
-    make $MAKE_ARGS $KEEP_GOING KCFLAGS="-O2" -j$(nproc)
+    make $MAKE_ARGS $KEEP_GOING -j$(nproc)
 
     if [ ! -f "out/arch/arm64/boot/Image" ]; then
         echo "Error: AOSP Image compilation failed."
@@ -500,7 +500,7 @@ if [ "$TARGET_OS" == "miui" ] || [ "$TARGET_OS" == "coloros" ] || [ "$TARGET_OS"
     apply_debug_config
     make $MAKE_ARGS olddefconfig
     check_debug_config
-    make $MAKE_ARGS $KEEP_GOING KCFLAGS="-O2" -j$(nproc)
+    make $MAKE_ARGS $KEEP_GOING -j$(nproc)
 
     if [ ! -f "out/arch/arm64/boot/Image" ]; then
         echo "Error: Image compilation failed."
