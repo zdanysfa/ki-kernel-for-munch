@@ -17,6 +17,12 @@ case "$*" in
     *scaling_cur_freq*) echo 1804800 ;;
     *battery/temp*) echo 312 ;;
     *battery/status*) echo Discharging ;;
+    */proc/uptime*) echo 50.00 ;;
+    *"dumpsys SurfaceFlinger"*)
+        echo "  refresh-rate              : 60.00 Hz"
+        echo "HWC missed frame count: 5"
+        ;;
+    *pidof*) echo 1234 ;;
     *boot_id*)
         if [ "$fault" = reboot ]; then cat /proc/sys/kernel/random/uuid; else echo fixed-boot-id; fi
         ;;

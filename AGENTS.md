@@ -38,7 +38,9 @@ gh workflow run build-release.yml    # release, juga otomatis saat push tag v*
 bash tests/e2e/device_smoke.sh       # di HP lewat adb; IDLE_MINUTES=480 untuk uji semalaman
 bash tests/e2e/device_debug.sh start       # rekam baterai dan logcat di HP sampai reboot berikutnya
 bash tests/e2e/device_debug.sh suspend 20  # uji cepat: paksa 20 siklus suspend, sekitar 11 menit
+bash tests/e2e/device_debug.sh idle 10     # stres jalur memori saat idle 10 menit, boleh sambil dicas
 bash tests/e2e/device_debug.sh collect     # ambil semua bukti ke debug-logs/, jangan di-commit
+bash tests/e2e/device_feature_test.sh      # test terpandu: layar, hotspot, kamera, audio
 ```
 
 - `release`: kernel harian tanpa fitur debug.

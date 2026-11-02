@@ -2,6 +2,7 @@
 # Find out why the phone powers off, and how a battery or panel behaves. Needs root on the phone.
 #   start        record battery and logcat on the phone until the next reboot, then unplug USB
 #   suspend <n>  start, then force <n> suspend cycles after 60 s (about 30 s each)
+#   idle <min>   start, then stress the idle memory paths for <min> minutes, also on a charger
 #   collect      copy all evidence to debug-logs/<time>/, works on any kernel
 # The logs hold personal data: never commit or upload them to a public place.
 set -uo pipefail
@@ -41,6 +42,15 @@ force_suspend() {
     echo "unplug USB now: $1 suspend cycles start in 60 s, about $(($1 / 2 + 1)) minutes in total."
 }
 
+force_idle() {
+    case "$1" in
+        "" | *[!0-9]*) usage ;;
+    esac
+    start
+    run_detached "idle $(($1 * 2))"
+    echo "idle stress for $1 minutes, USB or charger may stay plugged. If the phone reboots, that is the bug: collect after boot."
+}
+
 capture() {
     timeout "$COLLECT_TIMEOUT" "$ADB" shell "su -c '$2'" > "$out/$1" 2>&1 ||
         echo "note: $1 incomplete, see the file"
@@ -63,6 +73,8 @@ collect() {
     capture logcat_now.txt 'logcat -d -b all -v threadtime'
     capture battery_history.txt "cat $PHONE_DIR/battery.log"
     capture suspend_history.txt "cat $PHONE_DIR/suspend.log"
+    capture idle_history.txt "cat $PHONE_DIR/idle.log"
+    capture deep_sleep.txt 'cat /sys/power/suspend_stats/success; cat /sys/power/system_sleep/stats; settings get global enable_screen_on_proximity_sensor'
     capture logcat_recorded.txt "cat $PHONE_DIR/logcat.txt*"
 
     echo "evidence: $out"
@@ -73,13 +85,13 @@ collect() {
 }
 
 usage() {
-    echo "Usage: device_debug.sh start | suspend <cycles> | collect"
+    echo "Usage: device_debug.sh start | suspend <cycles> | idle <minutes> | collect"
     exit 2
 }
 
 [ $# -ge 1 ] || usage
 case "$1" in
-    start | suspend | collect) ;;
+    start | suspend | idle | collect) ;;
     *) usage ;;
 esac
 
@@ -91,5 +103,6 @@ esac
 case "$1" in
     start) start ;;
     suspend) force_suspend "${2:-}" ;;
+    idle) force_idle "${2:-}" ;;
     collect) collect ;;
 esac

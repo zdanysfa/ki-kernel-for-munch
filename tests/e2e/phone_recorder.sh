@@ -11,6 +11,8 @@ rtc_alarm=/sys/class/rtc/rtc0/wakealarm
 suspend_seconds=20
 awake_seconds=10
 unplug_seconds=60
+idle_cycle_seconds=27
+screen_cycle_every=4
 
 # pid files outlive a reboot, so confirm the pid is still ours before killing it.
 stop_previous() {
@@ -58,7 +60,36 @@ suspend_cycles() {
     echo "$(date '+%F %T') done" >> "$dir/suspend.log"
 }
 
+# Compresses the memory churn of a long idle (reclaim, compaction, screen cycles) into minutes.
+# Works on a charger, where the phone cannot suspend at all.
+idle_stress() {
+    input keyevent 223
+    sleep 5
+    dumpsys battery unplug
+    dumpsys deviceidle force-idle deep
+    i=1
+    while [ "$i" -le "$1" ]; do
+        for pid in $(pidof com.android.settings com.miui.home com.android.camera com.miui.gallery com.android.phone); do
+            echo all > "/proc/$pid/reclaim"
+        done
+        echo 1 > /proc/sys/vm/compact_memory
+        echo 2 > /proc/sys/vm/drop_caches
+        if [ $((i % screen_cycle_every)) = 0 ]; then
+            input keyevent 224
+            sleep 3
+            input keyevent 223
+        fi
+        echo "$(date '+%F %T') cycle=$i/$1 up=$(cut -d' ' -f1 /proc/uptime) load=$(cut -d' ' -f1 /proc/loadavg) available_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo) temp=$(cat /sys/class/thermal/thermal_zone0/temp)" >> "$dir/idle.log"
+        sleep "$idle_cycle_seconds"
+        i=$((i + 1))
+    done
+    dumpsys deviceidle unforce
+    dumpsys battery reset
+    echo "$(date '+%F %T') done" >> "$dir/idle.log"
+}
+
 case "$1" in
     record) record ;;
     suspend) suspend_cycles "$2" ;;
+    idle) idle_stress "$2" ;;
 esac

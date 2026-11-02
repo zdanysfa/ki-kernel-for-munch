@@ -52,6 +52,16 @@ expect pass "device_debug: suspend cycles" debug_tool "" suspend 5
 expect fail "device_debug: suspend needs a number" debug_tool "" suspend many
 expect fail "device_debug: unknown command" debug_tool "" reboot
 expect fail "device_debug: no device" debug_tool offline collect
+expect pass "device_debug: idle stress" debug_tool "" idle 10
+expect fail "device_debug: idle needs a number" debug_tool "" idle long
+
+feature_test() {
+    ADB="$here/fake_adb.sh" FAKE_ADB_FAULT=$1 KI_TEST_AUTO=1 KI_DEBUG_OUT="$work/logs" bash "$here/device_feature_test.sh" "$2"
+}
+
+expect pass "device_feature_test: all steps" feature_test "" all
+expect fail "device_feature_test: new kernel error" feature_test panic camera
+expect fail "device_feature_test: unknown step" feature_test "" nope
 
 # A minimal zip: arm64 Image header and version banner.
 make_image() {
