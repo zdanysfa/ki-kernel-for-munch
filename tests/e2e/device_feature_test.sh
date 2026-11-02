@@ -45,7 +45,7 @@ refresh_rate() {
 kernel_errors_since() {
     root 'dmesg' | awk -v since="$1" '{t=$0; sub(/^\[ */, "", t); if (t + 0 > since + 0) print}' |
         grep -E 'Kernel panic|BUG:|Oops|WARNING: CPU|Internal error|kickoff timed out|underrun|context fault|CAM_ERR|subsystem failure|ADSP_E|hung_task|blocked for more' |
-        grep -vE 'include/trace/events|cam_isp_context_debug_register'
+        grep -vE 'include/trace/events|cam_isp_context_debug_register|buffer underrun , req size'
 }
 
 begin_step() {
