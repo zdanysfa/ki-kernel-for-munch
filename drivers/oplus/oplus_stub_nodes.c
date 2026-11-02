@@ -13,6 +13,7 @@
 #include <linux/version.h>
 #include <linux/notifier.h>
 #include <linux/sysctl.h>
+#include <linux/workqueue.h>
 
 static char ufs_read_mb[32] = "0\n";
 static char ufs_write_mb[32] = "0\n";
@@ -679,9 +680,15 @@ static void try_add_usb_attr(void) {
 	power_supply_put(usb_psy);
 }
 
+/* Creating a sysfs file sleeps, and power supply notifiers run atomic */
+static void add_usb_attr_work_fn(struct work_struct *work) {
+	try_add_usb_attr();
+}
+static DECLARE_WORK(add_usb_attr_work, add_usb_attr_work_fn);
+
 static int psy_notifier_call(struct notifier_block *nb, unsigned long event, void *data) {
 	struct power_supply *psy = data;
-	if (psy && !strcmp(psy->desc->name, "usb")) try_add_usb_attr();
+	if (psy && !strcmp(psy->desc->name, "usb")) schedule_work(&add_usb_attr_work);
 	return NOTIFY_OK;
 }
 
