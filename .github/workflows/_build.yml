@@ -1,0 +1,80 @@
+name: Build kernel
+
+on:
+  workflow_call:
+    inputs:
+      target_os:
+        type: string
+        required: true
+      profile:
+        type: string
+        required: true
+      variant:
+        type: string
+        default: ksu
+
+permissions:
+  contents: read
+
+env:
+  CLANG_RELEASE: 16.0.6-20260807
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # A kernel with debug info needs more disk than a fresh runner has free.
+      - name: Free disk space
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -qy bc bison flex cpio kmod libelf-dev libssl-dev python-is-python3 unzip zip \
+            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
+
+      - name: Install ZyC Clang
+        run: |
+          mkdir -p "$HOME/zyc-clang"
+          curl -fsSL "https://github.com/ZyCromerZ/Clang/releases/download/${CLANG_RELEASE}-release/Clang-${CLANG_RELEASE}.tar.gz" |
+            tar xz -C "$HOME/zyc-clang"
+
+      - name: Fetch root dependencies
+        run: ./fetch_deps.sh | tee deps-versions.txt
+
+      - name: Build
+        env:
+          VARIANT: ${{ inputs.variant }}
+          TARGET_OS: ${{ inputs.target_os }}
+          PROFILE: ${{ inputs.profile }}
+        run: bash build.sh munch "$VARIANT" "$TARGET_OS" "$PROFILE"
+
+      - name: Verify zip
+        run: |
+          bash tests/e2e/verify_zip.sh ./*.zip
+          sha256sum ./*.zip > SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ki-kernel-${{ inputs.target_os }}-${{ inputs.profile }}
+          if-no-files-found: error
+          path: |
+            *.zip
+            SHA256SUMS
+            deps-versions.txt
+
+      # Needed to turn a pstore backtrace into file and line numbers.
+      - uses: actions/upload-artifact@v4
+        if: inputs.profile != 'release'
+        with:
+          name: ki-kernel-${{ inputs.target_os }}-symbols
+          if-no-files-found: error
+          path: |
+            out/vmlinux
+            out/System.map
+            out/.config

@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Host tests
+        run: bash tests/run.sh
+      - name: Shellcheck
+        run: shellcheck fetch_deps.sh tests/run.sh tests/static/*.sh tests/e2e/*.sh
+      # The module ships a prebuilt daemon, and this is the machine that can make a fresh one.
+      - name: Build daemon for Android
+        run: |
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          rustup target add aarch64-linux-android
+          cargo build --release --manifest-path ki_daemon/Cargo.toml --target aarch64-linux-android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ki_daemon-aarch64
+          if-no-files-found: error
+          path: ki_daemon/target/aarch64-linux-android/release/ki_daemon

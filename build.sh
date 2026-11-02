@@ -1,9 +1,10 @@
 #!/bin/bash
 # Universal Ki-Kernel Build Script for SM8250 (munch / alioth / etc.)
 # Supports: AOSP / Custom ROM, MIUI / HyperOS, & ColorOS / OxygenOS
-# Usage: bash build.sh <target_device> [variant] [target_os]
+# Usage: bash build.sh <target_device> [variant] [target_os] [profile]
 #   variant   : ksu (default) | nosusfs | noksu
 #   target_os : aosp (default) | miui | coloros | both
+#   profile   : release (default) | debug | debug-kasan
 
 set -e
 
@@ -17,12 +18,13 @@ if [ -z "$1" ]; then
     echo "=========================================================="
     echo "  Ki-Kernel Build Script ($KERNEL_VERSION)"
     echo "=========================================================="
-    echo "Usage: bash build.sh <target_device> [variant] [target_os]"
+    echo "Usage: bash build.sh <target_device> [variant] [target_os] [profile]"
     echo ""
     echo "Arguments:"
     echo "  target_device : munch, alioth, apollo, lmi, umi, etc."
     echo "  variant       : ksu (default) | nosusfs | noksu"
     echo "  target_os     : aosp (default) | miui | coloros (or oplus/oos) | both"
+    echo "  profile       : release (default) | debug | debug-kasan"
     echo ""
     echo "Examples:"
     echo "  bash build.sh munch ksu aosp     # Build AOSP with ReSukiSU + SuSFS"
@@ -125,11 +127,24 @@ case "$TARGET_OS" in
     *) TARGET_OS="aosp" ;;
 esac
 
+# Parse Build Profile (release, debug)
+BUILD_PROFILE="${4:-release}"
+case "$BUILD_PROFILE" in
+    release) ;;
+    debug) VARIANT_TAG="${VARIANT_TAG}-DEBUG" ;;
+    debug-kasan) VARIANT_TAG="${VARIANT_TAG}-DEBUG-KASAN" ;;
+    *)
+        echo "Error: unknown profile: $BUILD_PROFILE (use release, debug or debug-kasan)"
+        exit 1
+        ;;
+esac
+
 echo "=========================================================="
 echo "Target Device : $TARGET_DEVICE"
 echo "Kernel        : $KERNEL_NAME $KERNEL_VERSION"
 echo "Variant       : $VARIANT_TAG"
 echo "Target OS     : $TARGET_OS"
+echo "Profile       : $BUILD_PROFILE"
 echo "=========================================================="
 
 apply_ksu_config() {
@@ -307,6 +322,64 @@ apply_droidspaces_config() {
         -d ANDROID_PARANOID_NETWORK
 }
 
+# Full-debug kernel for hunting bugs: slow and heavy on purpose, never for daily use.
+DEBUG_CONFIG_ON=(
+    # Readable backtraces, and vmlinux to decode them
+    LTO_NONE DEBUG_KERNEL DEBUG_INFO DEBUG_FS
+    # Every log level in dmesg, pr_debug included
+    DYNAMIC_DEBUG
+    # Logs that survive a crash or a forced reboot
+    PSTORE_CONSOLE PSTORE_PMSG PSTORE_RAM
+    # Hangs and deadlocks
+    DETECT_HUNG_TASK BOOTPARAM_HUNG_TASK_PANIC LOCKUP_DETECTOR SOFTLOCKUP_DETECTOR
+    PROVE_LOCKING DEBUG_ATOMIC_SLEEP PANIC_ON_OOPS
+    # Memory leaks and corruption
+    DEBUG_KMEMLEAK SLUB_DEBUG SLUB_DEBUG_ON PAGE_OWNER DEBUG_VM DEBUG_LIST
+    DEBUG_STACK_USAGE SCHED_STACK_END_CHECK
+)
+# Separate profile: KASAN is the likeliest option to stop vendor drivers from booting.
+KASAN_CONFIG_ON=(KASAN KASAN_GENERIC KASAN_OUTLINE)
+
+# ignore_loglevel and dyndbg=+p: all levels. no_console_suspend: logs up to the moment of an idle death.
+DEBUG_CMDLINE="ramoops_memreserve=4M ignore_loglevel printk.devkmsg=on dyndbg=+p no_console_suspend page_owner=on"
+
+debug_symbols() {
+    echo "${DEBUG_CONFIG_ON[@]}"
+    [ "$BUILD_PROFILE" = "debug-kasan" ] && echo "${KASAN_CONFIG_ON[@]}"
+    return 0
+}
+
+apply_debug_config() {
+    [ "$BUILD_PROFILE" != "release" ] || return 0
+    echo "Enabling $BUILD_PROFILE profile..."
+    for symbol in $(debug_symbols); do
+        scripts/config --file out/.config -e "$symbol"
+    done
+    # A debug kernel is slow enough to trip the default 120s limit on healthy tasks.
+    # No panic on soft lockup: the pr_debug flood alone could cause one and bootloop the phone.
+    scripts/config --file out/.config \
+        -d LTO_CLANG \
+        -d THINLTO \
+        -d BOOTPARAM_SOFTLOCKUP_PANIC \
+        --set-val DEFAULT_HUNG_TASK_TIMEOUT 240 \
+        --set-val LOG_BUF_SHIFT 25 \
+        --set-val CONSOLE_LOGLEVEL_DEFAULT 8 \
+        --set-val DEBUG_KMEMLEAK_EARLY_LOG_SIZE 40000 \
+        --set-str CMDLINE "$DEBUG_CMDLINE"
+}
+
+# scripts/config sets symbols blindly and olddefconfig drops any with unmet
+# dependencies, so check here rather than ship a debug kernel missing a detector.
+check_debug_config() {
+    [ "$BUILD_PROFILE" != "release" ] || return 0
+    for symbol in $(debug_symbols); do
+        if ! grep -q "^CONFIG_$symbol=y" out/.config; then
+            echo "Error: CONFIG_$symbol did not survive olddefconfig"
+            exit 1
+        fi
+    done
+}
+
 echo "Cleaning build directories..."
 rm -rf out/ anykernel/
 rm -rf include/config include/generated arch/*/include/generated .config 2>/dev/null || true
@@ -336,7 +409,9 @@ if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ] || [ "$TARGET_OS" ==
     make $MAKE_ARGS ${TARGET_DEVICE}_defconfig
     apply_ksu_config
     apply_droidspaces_config
+    apply_debug_config
     make $MAKE_ARGS olddefconfig
+    check_debug_config
     make $MAKE_ARGS KCFLAGS="-O2" -j$(nproc)
 
     if [ ! -f "out/arch/arm64/boot/Image" ]; then
@@ -418,7 +493,9 @@ if [ "$TARGET_OS" == "miui" ] || [ "$TARGET_OS" == "coloros" ] || [ "$TARGET_OS"
         -d SCHEDSTATS \
         -d DEBUG_INFO
 
+    apply_debug_config
     make $MAKE_ARGS olddefconfig
+    check_debug_config
     make $MAKE_ARGS KCFLAGS="-O2" -j$(nproc)
 
     if [ ! -f "out/arch/arm64/boot/Image" ]; then

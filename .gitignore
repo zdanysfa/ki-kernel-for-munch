@@ -85,6 +85,7 @@ modules.builtin
 !.mailmap
 !.cocciconfig
 !.clang-format
+!.github/
 
 #
 # Generated include files
@@ -155,3 +156,4 @@ build_universal.sh
 anykernel_template/
 Baseband-guard/
 NoMount/
+graphify-out/

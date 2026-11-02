@@ -1,0 +1,32 @@
+name: Build debug
+
+on:
+  push:
+    branches: [main, beta-test]
+    paths-ignore:
+      - '**.md'
+      - 'tests/**'
+  workflow_dispatch:
+    inputs:
+      target_os:
+        type: choice
+        options: [miui, aosp, coloros]
+        default: miui
+      kasan:
+        description: Add KASAN. Heavier, and more likely not to boot.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-debug-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build.yml
+    with:
+      target_os: ${{ inputs.target_os || 'miui' }}
+      profile: ${{ inputs.kasan && 'debug-kasan' || 'debug' }}
