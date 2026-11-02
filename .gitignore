@@ -156,4 +156,5 @@ build_universal.sh
 anykernel_template/
 Baseband-guard/
 NoMount/
+/KernelSU/
 graphify-out/
