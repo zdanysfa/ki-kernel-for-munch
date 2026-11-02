@@ -1,14 +1,18 @@
 #!/bin/bash
-# Inspect a flashable zip: layout, image and dtb headers, and the config inside
-# the kernel. Shows the build is what we meant to ship, not that it boots.
+# Inspect a flashable zip and its build config: layout, image and dtb headers,
+# required options. Shows the build is what we meant to ship, not that it boots.
+#
+# The config comes from out/.config, not the Image: kernel/Makefile embeds a stock
+# defconfig in /proc/config.gz for munch, so ikconfig does not describe the build.
 set -uo pipefail
 
-if [ $# -ne 1 ]; then
-    echo "Usage: verify_zip.sh <flashable.zip>"
+if [ $# -ne 2 ]; then
+    echo "Usage: verify_zip.sh <flashable.zip> <build .config>"
     exit 2
 fi
 
 zip_path=$1
+config=$2
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -29,20 +33,15 @@ check_dtb() {
 }
 
 check_image() {
-    local image=$1 config
+    local image=$1
     [ "$(magic "$image" 56)" = 41524d64 ] || { fail "${image#"$work"/}: not an arm64 Image"; return; }
     grep -aqE 'Linux version 4\.19\.[0-9]+-Ki-kernel' "$image" ||
         fail "${image#"$work"/}: missing Ki-kernel version banner"
-
-    config="$work/ikconfig"
-    if ! "$repo/scripts/extract-ikconfig" "$image" > "$config" 2>/dev/null; then
-        fail "${image#"$work"/}: cannot extract ikconfig"
-        return
-    fi
-    while IFS= read -r line; do
-        grep -qxF -- "$line" "$config" || fail "${image#"$work"/}: config lacks '$line'"
-    done < "$repo/tests/kconfig_invariants.txt"
 }
+
+while IFS= read -r line; do
+    grep -qxF -- "$line" "$config" || fail "$config lacks '$line'"
+done < "$repo/tests/kconfig_invariants.txt"
 
 if ! unzip -q "$zip_path" -d "$work"; then
     echo "FAIL: cannot unzip $zip_path"

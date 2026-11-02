@@ -48,7 +48,7 @@ Toolchain: ZyC Clang 16.0.6, rilisnya di `.github/workflows/_build.yml`.
 
 - `tests/static/`: sintaks, default balance, Kconfig wajib.
 - `tests/unit/` dan `cargo test --manifest-path ki_daemon/Cargo.toml`: logika WebUI dan daemon.
-- `tests/e2e/verify_zip.sh`: bukti zip benar, bukan bukti kernel bisa boot.
+- `tests/e2e/verify_zip.sh`: bukti isi zip dan config build benar, bukan bukti kernel bisa boot.
 - `tests/e2e/device_smoke.sh`: satu-satunya bukti di hardware asli. QEMU tidak bisa memboot image SM8250, jadi CI tidak bisa menggantikannya.
 
 Compile per objek tidak membuktikan link. Sebelum menyebut sebuah perubahan beres, sebutkan lapisan mana yang benar-benar sudah dijalankan dan mana yang belum.
@@ -83,6 +83,7 @@ Cek yang relevan dengan perubahan. Kernel dan daemon punya bentuk masalah sendir
 - **`.gitignore` mengabaikan `.*`.** `.github/` dikecualikan secara eksplisit.
 - **`ki_optimizer_module/bin/ki_daemon` adalah prebuilt.** Mengubah `ki_daemon/src/main.rs` tidak mengubah binary ini sampai dibuild ulang untuk aarch64.
 - **SELinux di-spoof.** `getenforce` tidak bisa dipakai sebagai bukti status SELinux yang sebenarnya.
+- **`/proc/config.gz` di-spoof.** `kernel/Makefile` menanam `munch_stock-defconfig`, bukan config build, jadi ikconfig dan `extract-ikconfig` tidak bisa dipakai sebagai bukti. Config asli ada di `out/.config` dan artifact `symbols`.
 - **Mati saat idle belum terbukti akar masalahnya.** Bukti dicari di `/sys/fs/pstore` setelah build debug. Jangan menulis "sudah fix" tanpa log dari device.
 
 ## Graphify

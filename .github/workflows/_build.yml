@@ -59,7 +59,7 @@ jobs:
 
       - name: Verify zip
         run: |
-          bash tests/e2e/verify_zip.sh ./*.zip
+          bash tests/e2e/verify_zip.sh ./*.zip out/.config
           sha256sum ./*.zip > SHA256SUMS
 
       - uses: actions/upload-artifact@v4
