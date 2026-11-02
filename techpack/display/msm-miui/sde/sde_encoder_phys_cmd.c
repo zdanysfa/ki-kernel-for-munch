@@ -30,6 +30,13 @@
  * based on common panels In the future, may want to allow panels to override
  * these default values
  */
+/*
+ * Aftermarket panels send their first TE late after power on: the first frame took
+ * 66-93 ms on one, so the 84 ms limit reported a healthy panel as hung and reset it.
+ * Frames that finish on time return at once, so this only delays detecting a real hang.
+ */
+#define CMD_KICKOFF_TIMEOUT_MS		(2 * KICKOFF_TIMEOUT_MS)
+
 #define DEFAULT_TEARCHECK_SYNC_THRESH_START	4
 #define DEFAULT_TEARCHECK_SYNC_THRESH_CONTINUE	4
 
@@ -747,7 +754,7 @@ static int _sde_encoder_phys_cmd_wait_for_idle(
 
 	wait_info.wq = &phys_enc->pending_kickoff_wq;
 	wait_info.atomic_cnt = &phys_enc->pending_kickoff_cnt;
-	wait_info.timeout_ms = KICKOFF_TIMEOUT_MS;
+	wait_info.timeout_ms = CMD_KICKOFF_TIMEOUT_MS;
 	recovery_events = sde_encoder_recovery_events_enabled(
 			phys_enc->parent);
 
@@ -1484,7 +1491,7 @@ static int _sde_encoder_phys_cmd_wait_for_wr_ptr(
 
 	wait_info.wq = &phys_enc->pending_kickoff_wq;
 	wait_info.atomic_cnt = &phys_enc->pending_retire_fence_cnt;
-	wait_info.timeout_ms = KICKOFF_TIMEOUT_MS;
+	wait_info.timeout_ms = CMD_KICKOFF_TIMEOUT_MS;
 
 	/* slave encoder doesn't enable for ppsplit */
 	if (_sde_encoder_phys_is_ppsplit_slave(phys_enc))
