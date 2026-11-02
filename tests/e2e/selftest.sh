@@ -37,6 +37,22 @@ expect fail "device_smoke: panic in log" smoke panic 0
 expect fail "device_smoke: crash in pstore" smoke crash 0
 expect fail "device_smoke: reboot during idle" smoke reboot 1
 
+debug_tool() {
+    ADB="$here/fake_adb.sh" FAKE_ADB_FAULT=$1 KI_DEBUG_OUT="$work/logs" bash "$here/device_debug.sh" "${@:2}"
+}
+
+collect_reports_power_off_reason() {
+    debug_tool "" collect > "$work/collect_output" || return 1
+    grep -q UVLO "$work/collect_output" && [ -f "$work/logs/power_supply.txt" ]
+}
+
+expect pass "device_debug: collect reports the power-off reason" collect_reports_power_off_reason
+expect pass "device_debug: start" debug_tool "" start
+expect pass "device_debug: suspend cycles" debug_tool "" suspend 5
+expect fail "device_debug: suspend needs a number" debug_tool "" suspend many
+expect fail "device_debug: unknown command" debug_tool "" reboot
+expect fail "device_debug: no device" debug_tool offline collect
+
 # A minimal zip: arm64 Image header and version banner.
 make_image() {
     {

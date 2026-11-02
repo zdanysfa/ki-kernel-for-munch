@@ -36,11 +36,14 @@ gh workflow run build-debug.yml      # debug, juga otomatis saat push ke main at
 gh workflow run build-debug.yml -f kasan=true   # debug + KASAN, risiko tidak boot lebih tinggi
 gh workflow run build-release.yml    # release, juga otomatis saat push tag v*
 bash tests/e2e/device_smoke.sh       # di HP lewat adb; IDLE_MINUTES=480 untuk uji semalaman
+bash tests/e2e/device_debug.sh start       # rekam baterai dan logcat di HP sampai reboot berikutnya
+bash tests/e2e/device_debug.sh suspend 20  # uji cepat: paksa 20 siklus suspend, sekitar 11 menit
+bash tests/e2e/device_debug.sh collect     # ambil semua bukti ke debug-logs/, jangan di-commit
 ```
 
 - `release`: kernel harian tanpa fitur debug.
-- `debug`: full debug untuk mencari masalah, berat dan bukan untuk harian. Semua level dmesg termasuk `pr_debug`, kmemleak, lockdep, `SLUB_DEBUG`, `PAGE_OWNER`, panic saat task hang 240 detik. Artifact `symbols` berisi `vmlinux` untuk membaca backtrace.
-- Kalau HP tidak boot dengan `debug`, kemungkinan pertama banjir log `dyndbg=+p`. Hapus dari `DEBUG_CMDLINE` di `build.sh`, lalu aktifkan saat runtime lewat `/sys/kernel/debug/dynamic_debug/control`.
+- `debug`: full debug untuk mencari masalah, berat dan bukan untuk harian. Semua level dmesg, `pr_debug` per area, kmemleak, lockdep, `SLUB_DEBUG`, `PAGE_OWNER`, panic saat task hang 240 detik. Artifact `symbols` berisi `vmlinux` untuk membaca backtrace.
+- Jangan pasang `dyndbg=+p` di `DEBUG_CMDLINE`. Bersama kmemleak, opsi itu mencatat setiap `kmalloc` dan `kfree`, sekitar 5.300 baris per detik di recovery, dan build dengan opsi itu freeze lalu reboot setelah boot. `pr_debug` diaktifkan per area saat runtime oleh `device_debug.sh start`, lewat `/sys/kernel/debug/dynamic_debug/control`.
 
 Toolchain: ZyC Clang 16.0.6, rilisnya di `.github/workflows/_build.yml`.
 
@@ -84,6 +87,7 @@ Cek yang relevan dengan perubahan. Kernel dan daemon punya bentuk masalah sendir
 - **`ki_optimizer_module/bin/ki_daemon` adalah prebuilt.** Mengubah `ki_daemon/src/main.rs` tidak mengubah binary ini sampai dibuild ulang untuk aarch64.
 - **SELinux di-spoof.** `getenforce` tidak bisa dipakai sebagai bukti status SELinux yang sebenarnya.
 - **`/proc/config.gz` di-spoof.** `kernel/Makefile` menanam `munch_stock-defconfig`, bukan config build, jadi ikconfig dan `extract-ikconfig` tidak bisa dipakai sebagai bukti. Config asli ada di `out/.config` dan artifact `symbols`.
+- **Baterai dan LCD aftermarket harus tetap didukung, begitu juga yang ori.** Perbaikan untuk part non-ori tidak boleh mengubah perilaku part ori, dan jangan mengunci atau membatasi part hanya karena non-ori. Part clone beda-beda, jadi perbaiki dari log device, bukan tebakan. Tidak ada jaminan semua clone bebas bug.
 - **Mati saat idle belum terbukti akar masalahnya.** Bukti dicari di `/sys/fs/pstore` setelah build debug. Jangan menulis "sudah fix" tanpa log dari device.
 
 ## Graphify

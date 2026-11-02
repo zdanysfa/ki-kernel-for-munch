@@ -26,6 +26,7 @@ case "$*" in
         ;;
     *dmesg*)
         echo "[    0.000000] Booting Linux on physical CPU 0x0"
+        echo "[    1.000000] qcom,qpnp-power-on: PMIC@SID0: Power-off reason: Triggered from UVLO (Under Voltage Lock Out)"
         [ "$fault" = panic ] && echo "[  100.000000] Kernel panic - not syncing: hung_task: blocked tasks"
         ;;
 esac
