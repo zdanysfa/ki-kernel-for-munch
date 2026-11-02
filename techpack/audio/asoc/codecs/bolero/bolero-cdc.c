@@ -1368,6 +1368,7 @@ static int bolero_probe(struct platform_device *pdev)
 	priv->plat_data.handle = (void *) priv;
 	priv->plat_data.update_wcd_event = bolero_cdc_update_wcd_event;
 	priv->plat_data.register_notifier = bolero_cdc_register_notifier;
+	BLOCKING_INIT_NOTIFIER_HEAD(&priv->notifier);
 
 	priv->core_hw_vote_count = 0;
 	priv->core_audio_vote_count = 0;
