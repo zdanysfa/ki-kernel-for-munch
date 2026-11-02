@@ -3934,7 +3934,13 @@ static bool try_to_inc_max_seq(struct lruvec *lruvec, unsigned long max_seq,
 			walk_mm(lruvec, mm, walk);
 	} while (mm);
 
-	clear_mm_walk();
+	/*
+	 * kswapd owns pgdat->mm_walk until its caller clears it. Clearing it here
+	 * made the next aging pass kzalloc a walk that clear_mm_walk() never frees
+	 * for kswapd.
+	 */
+	if (!current_is_kswapd())
+		clear_mm_walk();
 done:
 	if (success)
 		inc_max_seq(lruvec, can_swap, force_scan);
