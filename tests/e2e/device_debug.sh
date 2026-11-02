@@ -46,6 +46,7 @@ capture() {
         echo "note: $1 incomplete, see the file"
 }
 
+# shellcheck disable=SC2016 # single quotes on purpose: these expand on the phone
 collect() {
     out=${KI_DEBUG_OUT:-$repo/debug-logs/$(date +%Y%m%d-%H%M%S)}
     mkdir -p "$out"
