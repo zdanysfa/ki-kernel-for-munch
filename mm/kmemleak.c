@@ -123,10 +123,13 @@
 
 #define BYTES_PER_POINTER	sizeof(void *)
 
-/* GFP bitmask for kmemleak internal allocations */
+/*
+ * GFP bitmask for kmemleak internal allocations. One failure disables kmemleak
+ * for the whole boot, and on this phone that happened 86 seconds in, so let it
+ * use the memory reserves. Only debug builds compile this.
+ */
 #define gfp_kmemleak_mask(gfp)	(((gfp) & (GFP_KERNEL | GFP_ATOMIC)) | \
-				 __GFP_NORETRY | __GFP_NOMEMALLOC | \
-				 __GFP_NOWARN)
+				 __GFP_HIGH | __GFP_NORETRY | __GFP_NOWARN)
 
 /* scanning area inside a memory block */
 struct kmemleak_scan_area {
