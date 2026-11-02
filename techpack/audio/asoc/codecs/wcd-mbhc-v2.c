@@ -68,7 +68,8 @@ static ssize_t headset_status_read(struct file *filp, char __user *buffer,
 		size_t count, loff_t *ppos);
 static ssize_t headset_status_write(struct file *filp, const char __user *buffer,
 		size_t count, loff_t *ppos);
-static void add_headset_event(int status, int mask, int jackstatus);
+/* Its caller in wcd_mbhc_jack_report() is gone, so headset_status stays all zero. */
+static void __maybe_unused add_headset_event(int status, int mask, int jackstatus);
 static u16 headset_status[HEADSET_EVENT_MAX] = {0,0,0,0,0};
 
 // When the number of events is more than 15, no more growth.
