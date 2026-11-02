@@ -2221,6 +2221,13 @@ static int screen_state_for_thermal_callback(struct notifier_block *nb,
 }
 #endif
 
+/* sysfs_notify() takes a mutex, and power supply notifiers run atomic */
+static void usb_online_notify_work(struct work_struct *work)
+{
+	sysfs_notify(&thermal_message_dev.kobj, NULL, "usb_online");
+}
+static DECLARE_WORK(usb_online_work, usb_online_notify_work);
+
 static int usb_online_callback(struct notifier_block *nb,
 		unsigned long val, void *data)
 {
@@ -2244,7 +2251,7 @@ static int usb_online_callback(struct notifier_block *nb,
 		}
 		usb_state.usb_online = ret.intval;
 
-		sysfs_notify(&thermal_message_dev.kobj, NULL, "usb_online");
+		schedule_work(&usb_online_work);
 	}
 
 	return NOTIFY_OK;
