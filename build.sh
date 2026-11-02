@@ -129,8 +129,10 @@ esac
 
 # Parse Build Profile (release, debug)
 BUILD_PROFILE="${4:-release}"
+# Debug turns on code paths release never compiles: report all their errors in one run.
+KEEP_GOING="-k"
 case "$BUILD_PROFILE" in
-    release) ;;
+    release) KEEP_GOING="" ;;
     debug) VARIANT_TAG="${VARIANT_TAG}-DEBUG" ;;
     debug-kasan) VARIANT_TAG="${VARIANT_TAG}-DEBUG-KASAN" ;;
     *)
@@ -412,7 +414,7 @@ if [ "$TARGET_OS" == "aosp" ] || [ "$TARGET_OS" == "both" ] || [ "$TARGET_OS" ==
     apply_debug_config
     make $MAKE_ARGS olddefconfig
     check_debug_config
-    make $MAKE_ARGS KCFLAGS="-O2" -j$(nproc)
+    make $MAKE_ARGS $KEEP_GOING KCFLAGS="-O2" -j$(nproc)
 
     if [ ! -f "out/arch/arm64/boot/Image" ]; then
         echo "Error: AOSP Image compilation failed."
@@ -496,7 +498,7 @@ if [ "$TARGET_OS" == "miui" ] || [ "$TARGET_OS" == "coloros" ] || [ "$TARGET_OS"
     apply_debug_config
     make $MAKE_ARGS olddefconfig
     check_debug_config
-    make $MAKE_ARGS KCFLAGS="-O2" -j$(nproc)
+    make $MAKE_ARGS $KEEP_GOING KCFLAGS="-O2" -j$(nproc)
 
     if [ ! -f "out/arch/arm64/boot/Image" ]; then
         echo "Error: Image compilation failed."
