@@ -21,10 +21,11 @@ stop_previous() {
     done
 }
 
-# Only these areas: pr_debug everywhere logs every allocation and freezes the phone.
+# Only these areas: pr_debug everywhere logs every allocation and freezes the phone,
+# and techpack/display alone fills the 32 MB log buffer in under two minutes.
 enable_debug_logs() {
     mount -t debugfs none /sys/kernel/debug 2>/dev/null
-    for area in 'drivers/power/supply/*' 'techpack/display/*' 'drivers/input/touchscreen/*'; do
+    for area in 'drivers/power/supply/*' 'drivers/input/touchscreen/*'; do
         echo "file $area +p" > /sys/kernel/debug/dynamic_debug/control
     done
 }
