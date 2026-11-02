@@ -406,6 +406,15 @@ static int fsa4480_probe(struct i2c_client *i2c,
 #endif
 	fsa4480_update_reg_defaults(fsa_priv->regmap);
 
+	/* The power supply notifier can fire as soon as it is registered */
+	mutex_init(&fsa_priv->notification_lock);
+	i2c_set_clientdata(i2c, fsa_priv);
+
+	INIT_WORK(&fsa_priv->usbc_analog_work,
+		  fsa4480_usbc_analog_work_fn);
+
+	BLOCKING_INIT_NOTIFIER_HEAD(&fsa_priv->fsa4480_notifier);
+
 	fsa_priv->psy_nb.notifier_call = fsa4480_usbc_event_changed;
 	fsa_priv->psy_nb.priority = 0;
 	rc = power_supply_reg_notifier(&fsa_priv->psy_nb);
@@ -414,17 +423,6 @@ static int fsa4480_probe(struct i2c_client *i2c,
 			__func__, rc);
 		goto err_supply;
 	}
-
-	mutex_init(&fsa_priv->notification_lock);
-	i2c_set_clientdata(i2c, fsa_priv);
-
-	INIT_WORK(&fsa_priv->usbc_analog_work,
-		  fsa4480_usbc_analog_work_fn);
-
-	fsa_priv->fsa4480_notifier.rwsem =
-		(struct rw_semaphore)__RWSEM_INITIALIZER
-		((fsa_priv->fsa4480_notifier).rwsem);
-	fsa_priv->fsa4480_notifier.head = NULL;
 
 #ifdef CONFIG_MACH_XIAOMI_MUNCH
 	/* set usbc_mode initial value */
