@@ -1873,8 +1873,12 @@ cont:
 		 * shrink_page_list in try_to_unmap finds the page dirty, marks
 		 * it back as PageSwapBacked and skips reclaim. This can cause
 		 * isolated count mismatch.
+		 *
+		 * Mlocked pages cannot be reclaimed, and shrink_page_list()
+		 * BUGs under CONFIG_DEBUG_VM on a page still marked unevictable.
 		 */
-		if (PageAnon(page) && !PageSwapBacked(page)) {
+		if (PageUnevictable(page) ||
+		    (PageAnon(page) && !PageSwapBacked(page))) {
 			putback_lru_page(page);
 			continue;
 		}
