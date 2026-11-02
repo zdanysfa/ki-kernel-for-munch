@@ -18,6 +18,7 @@ permissions:
 
 env:
   CLANG_RELEASE: 16.0.6-20260807
+  CLANG_SHA256: c11341a58e15cebc4e25472291791ae6a5dceb3675c9dfde2cb035ad893b6ae0
 
 jobs:
   build:
@@ -41,8 +42,10 @@ jobs:
       - name: Install ZyC Clang
         run: |
           mkdir -p "$HOME/zyc-clang"
-          curl -fsSL "https://github.com/ZyCromerZ/Clang/releases/download/${CLANG_RELEASE}-release/Clang-${CLANG_RELEASE}.tar.gz" |
-            tar xz -C "$HOME/zyc-clang"
+          curl -fsSL -o clang.tar.gz "https://github.com/ZyCromerZ/Clang/releases/download/${CLANG_RELEASE}-release/Clang-${CLANG_RELEASE}.tar.gz"
+          echo "$CLANG_SHA256  clang.tar.gz" | sha256sum -c -
+          tar xzf clang.tar.gz -C "$HOME/zyc-clang"
+          rm clang.tar.gz
 
       - name: Fetch root dependencies
         run: ./fetch_deps.sh | tee deps-versions.txt
