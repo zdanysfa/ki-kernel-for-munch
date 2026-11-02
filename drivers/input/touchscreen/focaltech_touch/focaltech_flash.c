@@ -1229,40 +1229,13 @@ static int fts_fwupg_get_ver_in_tp(struct i2c_client *client, u8 *ver)
 }
 
 /************************************************************************
- * fts_fwupg_get_ver_in_host - read fw ver in host fw image
- *
- * return 0 if success, otherwise return error code
- ***********************************************************************/
-static int fts_fwupg_get_ver_in_host(u8 *ver)
-{
-	struct fts_upgrade *upg = fwupgrade;
-
-	if ((!upg) || (!upg->func) || (!upg->fw) || (!ver)) {
-		FTS_ERROR("fts_data/upgrade/func/fw/ver is NULL");
-		return -EINVAL;
-	}
-
-	if (upg->fw_length < upg->func->fwveroff) {
-		FTS_ERROR("fw len(%x) < fw ver offset(%x)", upg->fw_length, upg->func->fwveroff);
-		return -EINVAL;
-	}
-
-	FTS_INFO("fw version offset:0x%x", upg->func->fwveroff);
-	*ver = upg->fw[upg->func->fwveroff];
-	return 0;
-}
-
-/************************************************************************
  * fts_fwupg_need_upgrade - check fw need upgrade or not
  *
  * Return: return true if fw need upgrade
  ***********************************************************************/
 static bool fts_fwupg_need_upgrade(struct i2c_client *client)
 {
-	int ret = 0;
 	bool fwvalid = false;
-	u8 fw_ver_in_host = 0;
-	u8 fw_ver_in_tp = 0;
 	struct fts_ts_data *ts_data = NULL;
 
 	ts_data = i2c_get_clientdata(client);
@@ -1272,23 +1245,9 @@ static bool fts_fwupg_need_upgrade(struct i2c_client *client)
 	}
 
 	fwvalid = fts_fwupg_check_fw_valid(client);
+	/* A clone touch IC can die on the stock image, so only repair invalid firmware */
 	if (fwvalid) {
-		ret = fts_fwupg_get_ver_in_host(&fw_ver_in_host);
-		if (ret < 0) {
-			FTS_ERROR("get fw ver in host fail");
-			return false;
-		}
-
-		ret = fts_fwupg_get_ver_in_tp(client, &fw_ver_in_tp);
-		if (ret < 0) {
-			FTS_ERROR("get fw ver in tp fail");
-			return false;
-		}
-
-		FTS_INFO("fw version in tp:0x%x, host:0x%x", fw_ver_in_tp, fw_ver_in_host);
-		if (fw_ver_in_tp != fw_ver_in_host) {
-			return true;
-		}
+		FTS_INFO("fw valid, keep it");
 	} else {
 		FTS_INFO("fw invalid, need upgrade fw");
 		return true;
