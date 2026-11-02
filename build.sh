@@ -487,8 +487,6 @@ if [ "$TARGET_OS" == "miui" ] || [ "$TARGET_OS" == "coloros" ] || [ "$TARGET_OS"
         -e TECHPACK_CAMERA_XIAOMI \
         -e OVERLAY_FS \
         -d DEBUG_FS \
-        -e LTO_NONE \
-        -d LTO_CLANG \
         -d LOCALVERSION_AUTO \
         -d MODULE_SIG_SHA512 \
         -d MODULE_SIG_HASH \
