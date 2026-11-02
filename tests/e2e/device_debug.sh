@@ -56,6 +56,7 @@ collect() {
     capture pstore.txt 'for f in /sys/fs/pstore/*; do echo "== $f"; cat "$f"; done'
     capture power_supply.txt 'for d in /sys/class/power_supply/*; do echo "== $d"; cat "$d/uevent"; done; dumpsys battery'
     capture thermal.txt 'for z in /sys/class/thermal/thermal_zone*; do echo "$(cat "$z/type") $(cat "$z/temp")"; done'
+    capture display.txt 'cat /sys/class/drm/card0-DSI-1/panel_info; dumpsys SurfaceFlinger --vsync | grep "ideal period"; dumpsys SurfaceFlinger | grep -E "refresh-rate|missed frame"'
     capture suspend_stats.txt 'mount -t debugfs none /sys/kernel/debug 2>/dev/null; for f in /sys/power/suspend_stats/*; do echo "$f=$(cat "$f")"; done; cat /sys/kernel/debug/wakeup_sources'
     capture kmemleak.txt 'mount -t debugfs none /sys/kernel/debug 2>/dev/null; echo scan > /sys/kernel/debug/kmemleak; cat /sys/kernel/debug/kmemleak'
     capture shutdown.txt 'cat /data/system/shutdown-checkpoints/*; dumpsys dropbox --print SYSTEM_LAST_KMSG | tail -n 500'
