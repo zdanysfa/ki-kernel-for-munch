@@ -448,6 +448,21 @@ static unsigned int ki_target_max(int i, int mode)
 	return cap;
 }
 
+unsigned int ki_profile_clamp_max(unsigned int cpu, unsigned int freq)
+{
+	int i;
+
+	for (i = 0; i < KI_NR_CLUSTERS; i++) {
+		unsigned int cap;
+
+		if (ki_cluster_cpu[i] != cpu)
+			continue;
+		cap = ki_target_max(i, ki_get_active_profile());
+		return cap ? min(freq, cap) : freq;
+	}
+	return freq;
+}
+
 static int apply_ki_profile(int mode, bool force)
 {
 	const struct ki_profile_tune *t;
@@ -477,8 +492,8 @@ static int apply_ki_profile(int mode, bool force)
 
 		ret = sugov_set_cluster_rate_limits(cpu, c->up_us, c->down_us);
 		if (ret) {
-			pr_warn("ki_profile: cpu%u sugov not ready (%d), cpufreq limits skipped\n",
-				cpu, ret);
+			pr_debug("ki_profile: cpu%u sugov not ready (%d), cpufreq limits skipped\n",
+				 cpu, ret);
 			err |= BIT(i);
 			continue;
 		}
@@ -1148,6 +1163,8 @@ static const struct attribute_group ki_profile_attr_group = {
 static struct kobject *ki_profile_kobj;
 static struct delayed_work ki_profile_delayed_work;
 static int boot_settle_retries;
+/* schedutil starts after 60 s on a slow boot, and nothing else retries once this gives up */
+#define KI_BOOT_SETTLE_MAX_RETRY	24
 
 static void ki_profile_delayed_work_fn(struct work_struct *work)
 {
@@ -1157,10 +1174,10 @@ static void ki_profile_delayed_work_fn(struct work_struct *work)
 	err = ki_apply_effective(true);
 	mutex_unlock(&ki_profile_mutex);
 
-	if (err && boot_settle_retries < 6) {
+	if (err && boot_settle_retries < KI_BOOT_SETTLE_MAX_RETRY) {
 		boot_settle_retries++;
-		pr_info("ki_profile: sugov limits pending (err=%d), retrying in 5s (%d/6)\n",
-			err, boot_settle_retries);
+		pr_info("ki_profile: sugov limits pending (err=%d), retrying in 5s (%d/%d)\n",
+			err, boot_settle_retries, KI_BOOT_SETTLE_MAX_RETRY);
 		schedule_delayed_work(&ki_profile_delayed_work, msecs_to_jiffies(5000));
 		return;
 	}

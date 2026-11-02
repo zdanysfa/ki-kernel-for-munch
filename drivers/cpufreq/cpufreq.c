@@ -810,7 +810,30 @@ static ssize_t store_scaling_min_freq
 	return ret ? ret : count;
 }
 
-store_one(scaling_max_freq, max);
+static ssize_t store_scaling_max_freq(struct cpufreq_policy *policy,
+				      const char *buf, size_t count)
+{
+	int ret;
+	struct cpufreq_policy new_policy;
+	unsigned int val;
+
+	memcpy(&new_policy, policy, sizeof(*policy));
+	new_policy.min = policy->user_policy.min;
+
+	ret = sscanf(buf, "%u", &val);
+	if (ret != 1)
+		return -EINVAL;
+
+	/* HyperOS writes the hardware maximum after boot, which dropped the profile cap */
+	val = ki_profile_clamp_max(policy->cpu, val);
+	new_policy.max = val;
+
+	ret = cpufreq_set_policy(policy, &new_policy);
+	if (!ret)
+		policy->user_policy.max = val;
+
+	return ret ? ret : count;
+}
 
 /**
  * show_cpuinfo_cur_freq - current CPU frequency as detected by hardware
