@@ -1112,6 +1112,9 @@ static int ln8000_charger_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_MODEL_NAME:
 		val->strval = ln8000_dev_name[info->dev_role];
 		break;
+	case POWER_SUPPLY_PROP_TI_SET_BUS_PROTECTION_FOR_QC3:
+		/* Write-only. Any other error here aborts the whole uevent. */
+		return -ENODATA;
 	default:
 		return -EINVAL;
 	}
