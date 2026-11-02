@@ -342,8 +342,10 @@ DEBUG_CONFIG_ON=(
 # Separate profile: KASAN is the likeliest option to stop vendor drivers from booting.
 KASAN_CONFIG_ON=(KASAN KASAN_GENERIC KASAN_OUTLINE)
 
-# ignore_loglevel and dyndbg=+p: all levels. no_console_suspend: logs up to the moment of an idle death.
-DEBUG_CMDLINE="ramoops_memreserve=4M ignore_loglevel printk.devkmsg=on dyndbg=+p no_console_suspend page_owner=on"
+# ignore_loglevel: all levels. no_console_suspend: logs up to the moment of an idle death.
+# No dyndbg=+p: it logs every kmalloc and kfree through kmemleak, which froze the phone after boot.
+# phone_recorder.sh turns pr_debug on per area at runtime instead.
+DEBUG_CMDLINE="ramoops_memreserve=4M ignore_loglevel printk.devkmsg=on no_console_suspend page_owner=on"
 
 debug_symbols() {
     echo "${DEBUG_CONFIG_ON[@]}"

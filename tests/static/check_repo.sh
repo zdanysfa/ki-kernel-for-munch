@@ -27,6 +27,9 @@ node --check ki_optimizer_module/webroot/app.js || fail "app.js: syntax"
 cmp -s anykernel.sh anykernel_template/anykernel.sh ||
     fail "anykernel.sh and anykernel_template/anykernel.sh differ"
 
+# With kmemleak on, this floods the log with every allocation and the phone freezes after boot.
+grep -q '^DEBUG_CMDLINE=.*dyndbg=' build.sh && fail "build.sh: dyndbg in DEBUG_CMDLINE"
+
 while IFS= read -r line; do
     require_line arch/arm64/configs/munch_defconfig "$line" "tests/kconfig_invariants.txt"
 done < tests/kconfig_invariants.txt
