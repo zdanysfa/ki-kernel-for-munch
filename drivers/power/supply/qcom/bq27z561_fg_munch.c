@@ -1126,16 +1126,21 @@ static int fg_read_temperature(struct bq_fg_chip *bq)
 
 	ret = fg_read_word(bq, bq->regs[BQ_FG_REG_TEMP], &raw_temp);
 	if (ret < 0 || raw_temp == 0xFFFF || raw_temp == 0x0000 ||
-	    raw_temp < 2530 || raw_temp > 3380) {
+	    raw_temp < 2530 || raw_temp > 3630) {
 		/* Retry once after a brief delay in case bus was contested by charge pump */
 		usleep_range(2000, 3000);
 		ret = fg_read_word(bq, bq->regs[BQ_FG_REG_TEMP], &raw_temp);
 	}
 
 	if (ret < 0 || raw_temp == 0xFFFF || raw_temp == 0x0000 ||
-	    raw_temp < 2530 || raw_temp > 3380) {
+	    raw_temp < 2530 || raw_temp > 3630) {
 		bq_dbg(PR_OEM, "invalid temp read (ret=%d, raw=0x%04x), fallback to last_valid=%d\n",
 		       ret, raw_temp, last_valid_temp[idx]);
+		/* A gauge that stays unreadable must not look like a healthy battery */
+		if (i2c_error_cnt[idx]++ >= 3) {
+			i2c_error_cnt[idx] = 3;
+			return BQ_I2C_FAILED_TEMP_HIGH;
+		}
 		return last_valid_temp[idx];
 	}
 
@@ -1166,8 +1171,8 @@ static int fg_read_temperature(struct bq_fg_chip *bq)
 		}
 	}
 
-	/* Hard safety bounds: clamp to [-200, 560] (i.e. -20.0°C to 56.0°C) */
-	cur_temp = clamp(cur_temp, -200, 560);
+	/* Keep real overheating visible: Android's battery shutdown needs to see it */
+	cur_temp = clamp(cur_temp, -200, 900);
 
 	last_valid_temp[idx] = cur_temp;
 	return cur_temp;

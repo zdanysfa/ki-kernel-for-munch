@@ -29,7 +29,6 @@
 #define DRM_ATOMIC_H_
 
 #include <drm/drm_crtc.h>
-#include <asm/page.h>
 
 /**
  * struct drm_crtc_commit - track modeset commits on a CRTC
@@ -646,7 +645,7 @@ void drm_state_dump(struct drm_device *dev, struct drm_printer *p);
  */
 #define for_each_oldnew_connector_in_state(__state, connector, old_connector_state, new_connector_state, __i) \
 	for ((__i) = 0;								\
-	     (__state)->connectors && ((unsigned long)(__state)->connectors >= PAGE_OFFSET) && (__i) < (__state)->num_connector;		\
+	     (__i) < (__state)->num_connector;					\
 	     (__i)++)								\
 		for_each_if ((__state)->connectors[__i].ptr &&			\
 			     ((connector) = (__state)->connectors[__i].ptr,	\
@@ -667,7 +666,7 @@ void drm_state_dump(struct drm_device *dev, struct drm_printer *p);
  */
 #define for_each_old_connector_in_state(__state, connector, old_connector_state, __i) \
 	for ((__i) = 0;								\
-	     (__state)->connectors && ((unsigned long)(__state)->connectors >= PAGE_OFFSET) && (__i) < (__state)->num_connector;		\
+	     (__i) < (__state)->num_connector;					\
 	     (__i)++)								\
 		for_each_if ((__state)->connectors[__i].ptr &&			\
 			     ((connector) = (__state)->connectors[__i].ptr,	\
@@ -687,7 +686,7 @@ void drm_state_dump(struct drm_device *dev, struct drm_printer *p);
  */
 #define for_each_new_connector_in_state(__state, connector, new_connector_state, __i) \
 	for ((__i) = 0;								\
-	     (__state)->connectors && ((unsigned long)(__state)->connectors >= PAGE_OFFSET) && (__i) < (__state)->num_connector;		\
+	     (__i) < (__state)->num_connector;					\
 	     (__i)++)								\
 		for_each_if ((__state)->connectors[__i].ptr &&			\
 			     ((connector) = (__state)->connectors[__i].ptr,	\

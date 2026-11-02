@@ -69,7 +69,6 @@ static const char * const profile_names[] = {
 	[KI_PROFILE_PERFORMANCE] = "performance",
 };
 
-extern int vm_swappiness;
 extern int watermark_scale_factor;
 extern int sysctl_compact_unevictable_allowed;
 extern int sysctl_vfs_cache_pressure;
@@ -98,7 +97,6 @@ struct ki_profile_tune {
 	unsigned int up_migrate, down_migrate;
 	unsigned int grp_up_migrate, grp_down_migrate;
 	unsigned int window_stats_policy; /* 1 = MAX, 2 = MAX_RECENT_AVG */
-	int swappiness;
 	int wmark_scale;
 	int vfs_cache_pressure;
 };
@@ -130,7 +128,6 @@ static const struct ki_profile_tune ki_tunes[KI_PROFILE_MAX] = {
 	 * RTG boost on Silver (979MHz) & Gold (1.05GHz) ensures smooth 60/120Hz UI without black screens.
 	 * Zero floor frequency (floor_freq = 0) enables full idle drop to 300MHz baseline.
 	 * Zero iowait boost prevents I/O reads/downloads from waking high clock states.
-	 * Swappiness 40 minimizes zRAM compression CPU cycles to conserve battery.
 	 * VFS cache pressure 60 keeps dentries cached, avoiding flash I/O wakeups.
 	 */
 	[KI_PROFILE_BATTERY] = {
@@ -143,7 +140,7 @@ static const struct ki_profile_tune ki_tunes[KI_PROFILE_MAX] = {
 		.up_migrate = 98, .down_migrate = 90,
 		.grp_up_migrate = 98, .grp_down_migrate = 90,
 		.window_stats_policy = 2,
-		.swappiness = 40, .wmark_scale = 100, .vfs_cache_pressure = 60,
+		.wmark_scale = 100, .vfs_cache_pressure = 60,
 	},
 	/*
 	 * Balanced (Daily Driver - v1.3 Adem Anyem & Smooth 120Hz Efficiency):
@@ -163,7 +160,6 @@ static const struct ki_profile_tune ki_tunes[KI_PROFILE_MAX] = {
 	 * Zero floor frequency (floor_freq = 0) enables full idle drop down to 300MHz baseline.
 	 * Moderate I/O wait boost (iowait_boost_max = 5) prevents app launch and storage lag.
 	 * Capping Gold to 2.05GHz and Prime to 2.36GHz chops off high-voltage thermal walls.
-	 * Swappiness 50 balances memory pressure and zRAM compression load efficiently.
 	 */
 	[KI_PROFILE_BALANCED] = {
 		.cl = {
@@ -175,7 +171,7 @@ static const struct ki_profile_tune ki_tunes[KI_PROFILE_MAX] = {
 		.up_migrate = 90, .down_migrate = 82,
 		.grp_up_migrate = 90, .grp_down_migrate = 82,
 		.window_stats_policy = 2,
-		.swappiness = 50, .wmark_scale = 100, .vfs_cache_pressure = 70,
+		.wmark_scale = 100, .vfs_cache_pressure = 70,
 	},
 	/*
 	 * Performance / Gaming Turbo (Zero Frame Drop & Rock-Solid FPS):
@@ -194,7 +190,7 @@ static const struct ki_profile_tune ki_tunes[KI_PROFILE_MAX] = {
 	 * bursts without latency from averaging.
 	 * Eager game thread promotion (up_migrate 55/40, grp 65/50) locks render pipelines to Big cores.
 	 * Uncapped hardware burst maximums (Silver 1.80GHz, Gold 2.42GHz, Prime 3.19GHz).
-	 * Memory tuning: swappiness 20 (avoids mid-game zRAM swap), watermark_scale 25 (prevents direct reclaim allocstall pauses),
+	 * Memory tuning: watermark_scale 150 (prevents direct reclaim allocstall pauses),
 	 * and vfs_cache_pressure 50 (keeps game asset textures cached in RAM).
 	 * Thermal bypass active with Thermal Auto-Guard watching at 47°C skin / 45°C batt / 85°C die.
 	 */
@@ -211,7 +207,7 @@ static const struct ki_profile_tune ki_tunes[KI_PROFILE_MAX] = {
 		.up_migrate = 55, .down_migrate = 40,
 		.grp_up_migrate = 65, .grp_down_migrate = 50,
 		.window_stats_policy = 1,
-		.swappiness = 20, .wmark_scale = 150, .vfs_cache_pressure = 50,
+		.wmark_scale = 150, .vfs_cache_pressure = 50,
 	},
 };
 
@@ -354,6 +350,7 @@ static void ki_guard_work_fn(struct work_struct *work)
 	bool cool_condition = false;
 	bool die_ok, skin_ok, batt_ok;
 	bool stop;
+	bool rearmed = false;
 
 	spin_lock_irqsave(&ki_guard_lock, flags);
 	stop = ki_guard_should_stop_locked();
@@ -408,6 +405,7 @@ static void ki_guard_work_fn(struct work_struct *work)
 
 	if (!ki_guard_tripped && hot_condition) {
 		ki_guard_tripped = true;
+		rearmed = true;
 		WRITE_ONCE(ki_thermal_throttle_enabled, true);
 		pr_info("ki_profile: guard tripped (die=%d skin=%d batt=%d), throttle re-armed\n",
 			die, skin, batt);
@@ -418,6 +416,10 @@ static void ki_guard_work_fn(struct work_struct *work)
 			die, skin, batt);
 	}
 	spin_unlock_irqrestore(&ki_guard_lock, flags);
+
+	/* Flipping the flag alone clamps nothing: zones here have no polling */
+	if (rearmed)
+		thermal_cdev_replay_bypassed();
 
 	queue_delayed_work(system_highpri_wq, &ki_guard_work,
 			   msecs_to_jiffies(KI_GUARD_POLL_MS));
@@ -487,7 +489,11 @@ static int apply_ki_profile(int mode, bool force)
 		sugov_set_cluster_pl(cpu, t->pl);
 
 		target_max = ki_target_max(i, mode);
-		ki_cpufreq_set_limits(cpu, 0, target_max);
+		ret = ki_cpufreq_set_limits(cpu, 0, target_max);
+		if (ret) {
+			pr_debug("ki_profile: cpu%u limits not applied (%d)\n", cpu, ret);
+			err |= BIT(i);
+		}
 	}
 
 	screen_on = READ_ONCE(ki_screen_on);
@@ -530,10 +536,12 @@ static int apply_ki_profile(int mode, bool force)
 	ki_thermal_applied = enable_thermal_throttle;
 
 	/* Thermal auto-guard runs only while screen is on and thermal bypass is active */
-	if (!enable_thermal_throttle)
+	if (!enable_thermal_throttle) {
 		mod_delayed_work(system_highpri_wq, &ki_guard_work, 0);
-	else
+	} else {
 		cancel_delayed_work(&ki_guard_work);
+		thermal_cdev_replay_bypassed();
+	}
 
 	/*
 	 * Update VM watermarks & idle floors only on explicit force switch (boot or user sysfs),
@@ -548,7 +556,8 @@ static int apply_ki_profile(int mode, bool force)
 			user_mode = KI_PROFILE_BALANCED;
 		ut = &ki_tunes[user_mode];
 
-		ki_cpufreq_reset_idle_floors(user_mode);
+		if (ki_cpufreq_reset_idle_floors(user_mode))
+			err |= BIT(0);
 		/* Swappiness left at default as requested: do not override vm_swappiness */
 		watermark_scale_factor = ut->wmark_scale;
 		watermark_boost_factor = 0;
@@ -590,6 +599,15 @@ static int ki_effective_mode(void)
 static bool ki_force_pending;	/* protected by ki_profile_mutex */
 static bool ki_apply_incomplete;	/* protected by ki_profile_mutex */
 
+/*
+ * A cluster can fail to apply when its policy rwsem is busy (cpu-boost, thermal).
+ * Retry a bounded number of times so a governor that never comes up cannot
+ * turn into a permanent wakeup source.
+ */
+#define KI_LIMITS_RETRY_MS	500
+#define KI_LIMITS_MAX_RETRY	10
+static unsigned int ki_limits_retry;
+
 /* Caller must hold ki_profile_mutex */
 static int ki_apply_effective(bool force)
 {
@@ -614,8 +632,16 @@ static int ki_apply_effective(bool force)
 		return 0;
 
 	ret = apply_ki_profile(mode, force);
-	ki_force_pending = force && (ret == -EBUSY);
+	ki_force_pending = force && ret;
 	ki_apply_incomplete = (ret != 0);
+	if (!ret) {
+		WRITE_ONCE(ki_limits_retry, 0);
+	} else if (ret > 0 && READ_ONCE(ki_limits_retry) < KI_LIMITS_MAX_RETRY) {
+		WRITE_ONCE(ki_limits_retry, READ_ONCE(ki_limits_retry) + 1);
+		/* queue, not mod: do not pull forward 5-second screen-off timer */
+		queue_delayed_work(system_power_efficient_wq, &ki_screen_work,
+				   msecs_to_jiffies(KI_LIMITS_RETRY_MS));
+	}
 	return ret;
 }
 
@@ -681,6 +707,7 @@ static int ki_display_notifier_cb(struct notifier_block *nb,
 			WRITE_ONCE(ki_screen_on, true);
 			WRITE_ONCE(ki_battery_armed, false);
 			WRITE_ONCE(ki_screen_retry, 0);
+			WRITE_ONCE(ki_limits_retry, 0);
 			mod_delayed_work(system_highpri_wq, &ki_screen_work, 0);
 		}
 		return NOTIFY_OK;
@@ -695,6 +722,7 @@ static int ki_display_notifier_cb(struct notifier_block *nb,
 			WRITE_ONCE(ki_screen_on, true);
 			WRITE_ONCE(ki_battery_armed, false);
 			WRITE_ONCE(ki_screen_retry, 0);
+			WRITE_ONCE(ki_limits_retry, 0);
 			mod_delayed_work(system_highpri_wq, &ki_screen_work, 0);
 		}
 		break;
@@ -706,6 +734,7 @@ static int ki_display_notifier_cb(struct notifier_block *nb,
 		if (READ_ONCE(ki_screen_on)) {
 			WRITE_ONCE(ki_battery_armed, false);
 			WRITE_ONCE(ki_screen_on, false);
+			WRITE_ONCE(ki_limits_retry, 0);
 			mod_delayed_work(system_power_efficient_wq, &ki_screen_work,
 					 msecs_to_jiffies(KI_SCREEN_OFF_DELAY_MS));
 		}
@@ -921,7 +950,7 @@ static ssize_t thermal_guard_active_show(struct kobject *kobj, struct kobj_attri
 	bool active;
 
 	spin_lock_irqsave(&ki_guard_lock, flags);
-	active = !ki_guard_should_stop_locked();
+	active = ki_guard_bypass_active_locked() && READ_ONCE(ki_screen_on);
 	spin_unlock_irqrestore(&ki_guard_lock, flags);
 
 	return scnprintf(buf, PAGE_SIZE, "%d\n", active ? 1 : 0);
@@ -935,6 +964,7 @@ static ssize_t thermal_guard_tripped_show(struct kobject *kobj, struct kobj_attr
 static ssize_t ki_max_freq_store(int i, const char *buf, size_t count)
 {
 	unsigned int val;
+	int ret;
 
 	if (kstrtouint(buf, 10, &val))
 		return -EINVAL;
@@ -944,10 +974,10 @@ static ssize_t ki_max_freq_store(int i, const char *buf, size_t count)
 
 	mutex_lock(&ki_profile_mutex);
 	WRITE_ONCE(ki_user_max_freq[i], val);
-	ki_cpufreq_set_limits(ki_cluster_cpu[i], 0,
-			      ki_target_max(i, ki_effective_mode()));
+	ret = ki_cpufreq_set_limits(ki_cluster_cpu[i], 0,
+				    ki_target_max(i, ki_effective_mode()));
 	mutex_unlock(&ki_profile_mutex);
-	return count;
+	return ret ? ret : (ssize_t)count;
 }
 
 static ssize_t max_freq_silver_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)

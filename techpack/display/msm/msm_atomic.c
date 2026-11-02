@@ -525,9 +525,9 @@ static void complete_commit(struct msm_commit *c)
 
 	msm_atomic_wait_for_commit_done(dev, state);
 
-	kms->funcs->complete_commit(kms, state);
-
 	drm_atomic_helper_cleanup_planes(dev, state);
+
+	kms->funcs->complete_commit(kms, state);
 
 	drm_atomic_state_put(state);
 

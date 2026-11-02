@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, ErrorKind};
 use std::path::Path;
 use std::process::{exit, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -116,6 +116,12 @@ fn parse_bool(v: &str) -> bool {
     v == "1" || v.eq_ignore_ascii_case("true")
 }
 
+/// Config ada di shared storage dan bisa ditulis app lain: hanya terima nama paket Android.
+fn is_valid_package(pkg: &str) -> bool {
+    !pkg.is_empty()
+        && pkg.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_')
+}
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -200,7 +206,7 @@ impl DaemonConfig {
                 self.games.clear();
                 for item in v.split(',') {
                     let pkg = item.trim();
-                    if !pkg.is_empty() {
+                    if is_valid_package(pkg) {
                         self.games.insert(pkg.to_string());
                     }
                 }
@@ -214,18 +220,21 @@ impl DaemonConfig {
         let mut cfg = DaemonConfig::default();
         let path = Self::get_conf_path();
 
-        if let Ok(file) = File::open(path) {
-            for line in BufReader::new(file).lines().map_while(Result::ok) {
-                let trimmed = line.trim();
-                if trimmed.is_empty() || trimmed.starts_with('#') {
-                    continue;
-                }
-                if let Some((key, val)) = trimmed.split_once('=') {
-                    cfg.apply(key.trim(), val.trim().trim_matches('"'));
+        match File::open(path) {
+            Ok(file) => {
+                for line in BufReader::new(file).lines().map_while(Result::ok) {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                        continue;
+                    }
+                    if let Some((key, val)) = trimmed.split_once('=') {
+                        cfg.apply(key.trim(), val.trim().trim_matches('"'));
+                    }
                 }
             }
-        } else {
-            cfg.save();
+            // Hanya buat file baru kalau memang belum ada; gagal baca sementara tidak boleh menimpa config user.
+            Err(e) if e.kind() == ErrorKind::NotFound => cfg.save(),
+            Err(e) => eprintln!("[Ki-Daemon] WARN: gagal membaca {path}: {e}"),
         }
 
         cfg
@@ -260,8 +269,11 @@ impl DaemonConfig {
             games_str
         );
 
-        let _ = fs::write(path, content);
-        let _ = Command::new("chmod").args(["666", path]).status();
+        // Lewat file sementara: pembaca lain tidak pernah melihat config yang setengah tertulis.
+        let tmp = format!("{path}.tmp");
+        if fs::write(&tmp, content).is_ok() && fs::rename(&tmp, path).is_ok() {
+            let _ = Command::new("chmod").args(["666", path]).status();
+        }
     }
 }
 
@@ -430,13 +442,18 @@ fn notify_game_turbo(engaged: bool, game_pkg: &str) {
     } else {
         "🎮 Game Turbo: OFF — Restored".to_string()
     };
-    // Fire and forget — don't block the main loop
-    let _ = Command::new("cmd")
+    // Don't block the main loop, but reap the child so it never stays a zombie
+    let child = Command::new("cmd")
         .args(["notification", "post", "-t", "Ki-Kernel", "ki_turbo", &msg])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn();
+    if let Ok(mut child) = child {
+        thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -491,7 +508,11 @@ fn get_foreground_app_cgroup(cfg: &DaemonConfig) -> Option<(String, bool)> {
 
 // Strategy 2: dumpsys window (mahal: fork + output besar)
 fn get_foreground_app_dumpsys(cfg: &DaemonConfig) -> Option<(String, bool)> {
-    let output = Command::new("dumpsys").args(["window", "displays"]).output().ok()?;
+    // dumpsys ikut macet kalau system_server macet; jangan biarkan itu menahan main loop.
+    let output = Command::new("timeout")
+        .args(["3", "dumpsys", "window", "displays"])
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
 
     for line in text.lines() {
@@ -968,7 +989,7 @@ fn print_status() {
         println!("{{");
         println!("  \"running\": true,");
         println!("  \"pid\": {},", map.get("PID").unwrap_or(&"0"));
-        println!("  \"foreground_pkg\": \"{}\",", map.get("FOREGROUND_PKG").unwrap_or(&"unknown"));
+        println!("  \"foreground_pkg\": {:?},", map.get("FOREGROUND_PKG").unwrap_or(&"unknown"));
         println!("  \"is_game\": {},", map.get("IS_GAME").unwrap_or(&"0") == &"1");
         println!("  \"active_profile\": {},", map.get("ACTIVE_PROFILE").unwrap_or(&"1"));
         println!("  \"bypass_charging\": {},", map.get("BYPASS_CHARGING").unwrap_or(&"0") == &"1");
@@ -1058,10 +1079,12 @@ fn stop_daemon() {
 
 fn add_game(pkg: &str) {
     let mut cfg = DaemonConfig::load();
-    if !pkg.trim().is_empty() {
+    if is_valid_package(pkg.trim()) {
         cfg.games.insert(pkg.trim().to_string());
         cfg.save();
         println!("Added game: {pkg}");
+    } else {
+        eprintln!("Invalid package name: {pkg}");
     }
 }
 
@@ -1124,5 +1147,18 @@ fn main() {
             eprintln!("Unknown command: {}", args[1]);
             exit(1);
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn games_config_rejects_shell_metacharacters() {
+        let mut cfg = DaemonConfig::default();
+        cfg.apply("GAMES", "com.valid.game,x$(id),a\"b,c`d`,e;f, ,com.other_game");
+        let mut games: Vec<_> = cfg.games.iter().map(String::as_str).collect();
+        games.sort();
+        assert_eq!(games, ["com.other_game", "com.valid.game"]);
     }
 }

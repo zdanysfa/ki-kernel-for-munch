@@ -181,8 +181,10 @@ static int devfreq_cooling_set_cur_state(struct thermal_cooling_device *cdev,
 		return 0;
 
 	/* Ki-Profile Gaming Turbo: Do not throttle GPU devfreq during performance mode */
-	if (unlikely(!ki_thermal_throttle_enabled && state > 0))
+	if (unlikely(!ki_thermal_throttle_enabled && state > 0)) {
+		WRITE_ONCE(cdev->throttle_bypassed, true);
 		return 0;
+	}
 
 	dev_dbg(dev, "Setting cooling state %lu\n", state);
 

@@ -3199,6 +3199,8 @@ int smblib_set_bypass(struct smb_charger *chg, bool en)
 		return -ENODEV;
 
 	mutex_lock(&chg->bypass_lock);
+	if (!en)
+		chg->bypass_user_owned = false;
 	if (chg->bypass_active == en) {
 		mutex_unlock(&chg->bypass_lock);
 		return 0;

@@ -538,21 +538,12 @@ chmod 644 /sys/class/power_supply/battery/battery_cycle_count 2>/dev/null
 chmod 664 /sys/class/power_supply/battery/battery_charging_enabled 2>/dev/null
 chmod 664 /sys/class/power_supply/battery/charging_enabled 2>/dev/null
 
-# Kernel tweak nodes permissions (controlled by user via Ki-Kernel Settings module)
-chmod 666 /sys/kernel/ki_profile/* 2>/dev/null
+# Kernel control nodes stay root-only; only feature nodes used by apps are opened here
 chmod 666 /dev/ntsync 2>/dev/null
 chmod 666 /sys/devices/platform/kcal_ctrl.0/* 2>/dev/null
-chmod 666 /sys/kernel/mm/lru_gen/* 2>/dev/null
-chmod 666 /proc/mglru 2>/dev/null
 chmod 664 /proc/bypass_charging 2>/dev/null
 chmod 664 /sys/kernel/dyn_fsync/* 2>/dev/null
 chmod 664 /sys/module/sync/parameters/fsync_enabled 2>/dev/null
-chmod 666 /sys/kernel/gpu/gpu_governor 2>/dev/null
-chmod 666 /sys/kernel/gpu/gpu_force_683 2>/dev/null
-chmod 666 /sys/kernel/gpu/gpu_clocks 2>/dev/null
-chmod 666 /sys/class/kgsl/kgsl-3d0/max_gpuclk 2>/dev/null
-chmod 666 /sys/class/kgsl/kgsl-3d0/min_clock_mhz 2>/dev/null
-chmod 666 /sys/class/kgsl/kgsl-3d0/idle_timer 2>/dev/null
 chmod 666 /sys/touchpanel/double_tap 2>/dev/null
 chmod 666 /sys/touchpanel/reversed_keys 2>/dev/null
 chmod 666 /sys/class/drm/card0-DSI-*/dimming 2>/dev/null
@@ -564,18 +555,12 @@ chmod 666 /sys/devices/platform/soc/soc:qcom,dsi-display-primary/dc_dimming 2>/d
 chmod 666 /sys/devices/platform/soc/soc:qcom,dsi-display-primary/hbm 2>/dev/null
 chmod 666 /sys/devices/virtual/mi_display/disp_feature/disp-DSI-*/disp_param 2>/dev/null
 chmod 666 /sys/devices/virtual/mi_display/disp_feature/disp-DSI-*/dimming 2>/dev/null
-chmod 666 /sys/block/zram0/comp_algorithm 2>/dev/null
 
 # Fast charge nodes permission & active defaults (15W Type-C Laptop, 40W QC3.5, 67W PPS Turbo)
-chmod 666 /sys/class/power_supply/battery/screen_on_fast_charge 2>/dev/null
-chmod 666 /sys/kernel/fast_charge/screen_on_fast_charge 2>/dev/null
 echo 1 > /sys/class/power_supply/battery/screen_on_fast_charge 2>/dev/null
 echo 1 > /sys/kernel/fast_charge/screen_on_fast_charge 2>/dev/null
-chmod 666 /sys/class/power_supply/battery/force_fast_charge 2>/dev/null
-chmod 666 /sys/kernel/fast_charge/force_fast_charge 2>/dev/null
 echo 1 > /sys/class/power_supply/battery/force_fast_charge 2>/dev/null
 echo 1 > /sys/kernel/fast_charge/force_fast_charge 2>/dev/null
-chmod 666 /proc/fast_charge 2>/dev/null
 echo 1 > /proc/fast_charge 2>/dev/null
 chmod 666 /sys/class/power_supply/usb/pd_authentication 2>/dev/null
 echo 1 > /sys/class/power_supply/usb/pd_authentication 2>/dev/null
@@ -587,11 +572,6 @@ chmod 666 /sys/class/power_supply/bms/authentic 2>/dev/null
 echo 1 > /sys/class/power_supply/bms/authentic 2>/dev/null
 
 # Wakelock blocker permissions
-chmod 666 /sys/kernel/wakelock_blocker/wake_lock 2>/dev/null
-chmod 666 /sys/kernel/wakelock_blocker/debug 2>/dev/null
-chmod 666 /sys/class/misc/boeffla_wakelock_blocker/wakelock_blocker 2>/dev/null
-chmod 666 /sys/class/misc/boeffla_wakelock_blocker/debug 2>/dev/null
-chmod 666 /sys/devices/virtual/misc/boeffla_wakelock_blocker/wakelock_blocker 2>/dev/null
 
 # OPlus / ColorOS / OxygenOS stub nodes permissions
 chmod 644 /proc/oplusVersion/* 2>/dev/null

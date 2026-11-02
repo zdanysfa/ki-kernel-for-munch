@@ -163,6 +163,7 @@ struct thermal_cooling_device {
 	struct list_head node;
 	unsigned long sysfs_cur_state_req;
 	unsigned long sysfs_min_state_req;
+	bool throttle_bypassed; /* Ki-Profile dropped a request, replay on re-arm */
 };
 
 struct thermal_attr {
@@ -538,6 +539,7 @@ int get_tz_trend(struct thermal_zone_device *, int);
 struct thermal_instance *get_thermal_instance(struct thermal_zone_device *,
 		struct thermal_cooling_device *, int);
 void thermal_cdev_update(struct thermal_cooling_device *);
+void thermal_cdev_replay_bypassed(void);
 void thermal_notify_framework(struct thermal_zone_device *, int);
 #else
 static inline bool cdev_is_power_actor(struct thermal_cooling_device *cdev)
@@ -614,6 +616,8 @@ get_thermal_instance(struct thermal_zone_device *tz,
 	struct thermal_cooling_device *cdev, int trip)
 { return ERR_PTR(-ENODEV); }
 static inline void thermal_cdev_update(struct thermal_cooling_device *cdev)
+{ }
+static inline void thermal_cdev_replay_bypassed(void)
 { }
 static inline void thermal_notify_framework(struct thermal_zone_device *tz,
 	int trip)

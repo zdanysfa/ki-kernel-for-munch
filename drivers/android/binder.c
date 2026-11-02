@@ -1803,8 +1803,10 @@ static void binder_cleanup_ref_olocked(struct binder_ref *ref)
 		binder_dequeue_work(ref->proc, &ref->death->work);
 		binder_stats_deleted(BINDER_STAT_DEATH);
 	}
-	if (ref->freeze)
+	if (ref->freeze) {
 		binder_dequeue_work(ref->proc, &ref->freeze->work);
+		binder_stats_deleted(BINDER_STAT_FREEZE);
+	}
 	binder_stats_deleted(BINDER_STAT_REF);
 }
 
@@ -3751,13 +3753,14 @@ static void binder_transaction(struct binder_proc *proc,
 	} else {
 		BUG_ON(target_node == NULL);
 		BUG_ON(t->buffer->async_transaction != 1);
+#ifdef CONFIG_XIAOMI_MIUI
+		/* Must precede queuing: the target may free t as soon as it is queued */
+		t->timesRecord = binder_clock();
+#endif
 		return_error = binder_proc_transaction(t, target_proc, NULL);
 		if (return_error == BR_TRANSACTION_PENDING_FROZEN)
 			tcomplete->type = BINDER_WORK_TRANSACTION_PENDING;
 		binder_enqueue_thread_work(thread, tcomplete);
-#ifdef CONFIG_XIAOMI_MIUI
-		t->timesRecord = binder_clock();
-#endif
 		if (return_error &&
 		    return_error != BR_TRANSACTION_PENDING_FROZEN)
 			goto err_dead_proc_or_thread;
@@ -5171,22 +5174,8 @@ static void binder_free_proc(struct binder_proc *proc)
 
 	BUG_ON(!list_empty(&proc->todo));
 	BUG_ON(!list_empty(&proc->delivered_death));
-	if (!list_empty(&proc->delivered_freeze)) {
-		struct binder_work *w, *n;
-
-		pr_warn("%s: proc %d delivered_freeze not empty\n",
-			__func__, proc->pid);
-		list_for_each_entry_safe(w, n, &proc->delivered_freeze, entry) {
-			list_del_init(&w->entry);
-			if (w->type == BINDER_WORK_FROZEN_BINDER ||
-			    w->type == BINDER_WORK_CLEAR_FREEZE_NOTIFICATION) {
-				struct binder_ref_freeze *freeze =
-					container_of(w, struct binder_ref_freeze, work);
-				kfree(freeze);
-				binder_stats_deleted(BINDER_STAT_FREEZE);
-			}
-		}
-	}
+	/* binder_deferred_release() has already drained this list */
+	WARN_ON(!list_empty(&proc->delivered_freeze));
 	if (proc->outstanding_txns)
 		pr_warn("%s: Unexpected outstanding_txns %d\n",
 			__func__, proc->outstanding_txns);

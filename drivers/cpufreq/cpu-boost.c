@@ -12,6 +12,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/input.h>
+#include <linux/mutex.h>
 #include <linux/time.h>
 #include <linux/sysfs.h>
 
@@ -67,12 +68,18 @@ store_one(sched_boost_on_input);
 cpu_boost_attr_rw(sched_boost_on_input);
 
 
-static bool sched_boost_on_powerkey_input = true;
+static unsigned int sched_boost_on_powerkey_input = 1;
 show_one(sched_boost_on_powerkey_input);
 store_one(sched_boost_on_powerkey_input);
 cpu_boost_attr_rw(sched_boost_on_powerkey_input);
 
-static bool sched_boost_active;
+/* Serializes the boost works, which can otherwise run concurrently */
+static DEFINE_MUTEX(boost_lock);
+/* Boost type currently held by cpu-boost, 0 if none. Protected by boost_lock */
+static int active_sched_boost;
+
+#define FULL_THROTTLE_BOOST_TYPE	1
+#define RESTRAINED_BOOST_TYPE		3
 
 static struct delayed_work input_boost_rem;
 static u64 last_input_time;
@@ -270,10 +277,36 @@ static void update_policy_online(void)
 	put_online_cpus();
 }
 
+/*
+ * Drop only cpu-boost's own reference. sched_set_boost(0) would clear every
+ * holder, including the boost of the Ki-Profile Performance mode.
+ * Types above RESTRAINED (MI_BOOST) are enabled as FULL_THROTTLE.
+ */
+static void release_sched_boost(void)
+{
+	int type = active_sched_boost;
+
+	if (!type)
+		return;
+
+	if (sched_set_boost(type > RESTRAINED_BOOST_TYPE ?
+			    -FULL_THROTTLE_BOOST_TYPE : -type))
+		pr_err("cpu-boost: sched boost disable failed\n");
+	active_sched_boost = 0;
+}
+
 static void do_input_boost_rem(struct work_struct *work)
 {
-	unsigned int i, ret;
+	unsigned int i;
 	struct cpu_sync *i_sync_info;
+
+	mutex_lock(&boost_lock);
+
+	/* A newer boost re-armed this work while it waited for the lock */
+	if (delayed_work_pending(&input_boost_rem)) {
+		mutex_unlock(&boost_lock);
+		return;
+	}
 
 	/* Reset the input_boost_min for all CPUs in the system */
 	pr_debug("Resetting input boost min for all CPUs\n");
@@ -285,12 +318,8 @@ static void do_input_boost_rem(struct work_struct *work)
 	/* Update policies for all online CPUs */
 	update_policy_online();
 
-	if (sched_boost_active) {
-		ret = sched_set_boost(0);
-		if (ret)
-			pr_err("cpu-boost: sched boost disable failed\n");
-		sched_boost_active = false;
-	}
+	release_sched_boost();
+	mutex_unlock(&boost_lock);
 }
 
 static void do_input_boost(struct work_struct *work)
@@ -298,11 +327,9 @@ static void do_input_boost(struct work_struct *work)
 	unsigned int i, ret;
 	struct cpu_sync *i_sync_info;
 
+	mutex_lock(&boost_lock);
 	cancel_delayed_work(&input_boost_rem);
-	if (sched_boost_active) {
-		sched_set_boost(0);
-		sched_boost_active = false;
-	}
+	release_sched_boost();
 
 	/* Set the input_boost_min for all CPUs in the system */
 	pr_debug("Setting input boost min for all CPUs\n");
@@ -320,11 +347,12 @@ static void do_input_boost(struct work_struct *work)
 		if (ret)
 			pr_err("cpu-boost: sched boost enable failed\n");
 		else
-			sched_boost_active = true;
+			active_sched_boost = sched_boost_on_input;
 	}
 
 	queue_delayed_work(cpu_boost_wq, &input_boost_rem,
 					msecs_to_jiffies(input_boost_ms));
+	mutex_unlock(&boost_lock);
 }
 
 static void do_powerkey_input_boost(struct work_struct *work)
@@ -333,11 +361,9 @@ static void do_powerkey_input_boost(struct work_struct *work)
 	unsigned int i, ret;
 	struct cpu_sync *i_sync_info;
 
+	mutex_lock(&boost_lock);
 	cancel_delayed_work(&input_boost_rem);
-	if (sched_boost_active) {
-		sched_set_boost(0);
-		sched_boost_active = false;
-	}
+	release_sched_boost();
 
 	/* Set the powerkey_input_boost_min for all CPUs in the system */
 	pr_debug("Setting powerkey input boost min for all CPUs\n");
@@ -352,15 +378,16 @@ static void do_powerkey_input_boost(struct work_struct *work)
 
 	/* Enable scheduler boost to migrate tasks to big cluster */
 	if (sched_boost_on_powerkey_input) {
-		ret = sched_set_boost(1);
+		ret = sched_set_boost(FULL_THROTTLE_BOOST_TYPE);
 		if (ret)
 			pr_err("cpu-boost: HMP boost enable failed\n");
 		else
-			sched_boost_active = true;
+			active_sched_boost = FULL_THROTTLE_BOOST_TYPE;
 	}
 
 	queue_delayed_work(cpu_boost_wq, &input_boost_rem,
 				msecs_to_jiffies(powerkey_input_boost_ms));
+	mutex_unlock(&boost_lock);
 }
 
 static void cpuboost_input_event(struct input_handle *handle,
@@ -371,8 +398,13 @@ static void cpuboost_input_event(struct input_handle *handle,
 	if (!input_boost_enabled)
 		return;
 
-	/* Skip finger release */
-	if (type == EV_KEY && code == BTN_TOUCH && value == 0)
+	/*
+	 * Skip release frames (SLOT, TRACKING_ID -1, key up, SYN). A finger that
+	 * moves still reports ABS_MT_POSITION_*, so gestures keep boosting.
+	 */
+	if (type == EV_SYN || (type == EV_KEY && value == 0) ||
+	    (type == EV_ABS && (code == ABS_MT_SLOT ||
+				(code == ABS_MT_TRACKING_ID && value < 0))))
 		return;
 
 	now = ktime_to_us(ktime_get());

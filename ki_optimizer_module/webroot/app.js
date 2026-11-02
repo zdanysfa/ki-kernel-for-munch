@@ -10,6 +10,11 @@ function getUniqueCallbackName(prefix) {
 }
 
 // Execute Shell Command via KernelSU Bridge
+// Package names come from a config file on shared storage: never let the shell expand them.
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 function exec(command, options = {}) {
   if (typeof ksu === "undefined") {
     console.log("[Dev Mode] Shell Exec:", command);
@@ -734,9 +739,9 @@ async function addGame(pkg) {
   try {
     await exec(`
       if command -v ki_daemon >/dev/null 2>&1; then
-        ki_daemon add-game "${clean}"
+        ki_daemon add-game ${shellQuote(clean)}
       elif [ -x "/data/adb/modules/ki_optimizer/bin/ki_daemon" ]; then
-        /data/adb/modules/ki_optimizer/bin/ki_daemon add-game "${clean}"
+        /data/adb/modules/ki_optimizer/bin/ki_daemon add-game ${shellQuote(clean)}
       fi
     `);
     showToast(`Added ${clean} to Auto Game Turbo`);
@@ -751,9 +756,9 @@ async function removeGame(pkg) {
   try {
     await exec(`
       if command -v ki_daemon >/dev/null 2>&1; then
-        ki_daemon remove-game "${pkg}"
+        ki_daemon remove-game ${shellQuote(pkg)}
       elif [ -x "/data/adb/modules/ki_optimizer/bin/ki_daemon" ]; then
-        /data/adb/modules/ki_optimizer/bin/ki_daemon remove-game "${pkg}"
+        /data/adb/modules/ki_optimizer/bin/ki_daemon remove-game ${shellQuote(pkg)}
       fi
     `);
     showToast(`Removed ${pkg}`);
@@ -767,9 +772,9 @@ async function setDaemonConfig(key, val) {
   try {
     await exec(`
       if command -v ki_daemon >/dev/null 2>&1; then
-        ki_daemon set ${key} "${val}"
+        ki_daemon set ${shellQuote(key)} ${shellQuote(val)}
       elif [ -x "/data/adb/modules/ki_optimizer/bin/ki_daemon" ]; then
-        /data/adb/modules/ki_optimizer/bin/ki_daemon set ${key} "${val}"
+        /data/adb/modules/ki_optimizer/bin/ki_daemon set ${shellQuote(key)} ${shellQuote(val)}
       fi
     `);
     showToast(`Updated ${key}`);

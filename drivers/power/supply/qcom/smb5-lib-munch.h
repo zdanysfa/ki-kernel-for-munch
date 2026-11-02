@@ -846,6 +846,7 @@ struct smb_charger {
 	bool			fake_plug_out;
 	bool			cp_to_sw_status;
 	bool			bypass_active;
+	bool			bypass_user_owned;
 	struct mutex		bypass_lock;
 
 	/* Screen-On Fast Charge & USB Force Fast Charge */

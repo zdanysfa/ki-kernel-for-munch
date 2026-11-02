@@ -62,8 +62,11 @@ static void scm_disable_sdi(void);
  * Runtime could be only changed value once.
  * There is no API from TZ to re-enable the registers.
  * So the SDI cannot be re-enabled when it already by-passed.
+ *
+ * Off by default: with it on, a panic or watchdog bite parks the phone in a
+ * dark crash-dump state until a forced reset, and that reset can boot black.
  */
-static int download_mode = 1;
+static int download_mode;
 static struct kobject dload_kobj;
 
 static int in_panic;
@@ -497,13 +500,16 @@ static void msm_restart_prepare(const char *cmd)
 			(in_panic || restart_mode == RESTART_DLOAD));
 
 	if (qpnp_pon_check_hard_reset_stored()) {
-		/* Set warm reset as true when device is in dload mode */
-		if (get_dload_mode() ||
+		/*
+		 * Set warm reset as true when device is in dload mode, and
+		 * on panic so DDR keeps the pstore/ramoops log for next boot
+		 */
+		if (get_dload_mode() || in_panic ||
 			((cmd != NULL && cmd[0] != '\0') &&
 			!strcmp(cmd, "edl")))
 			need_warm_reset = true;
 	} else {
-		need_warm_reset = (get_dload_mode() ||
+		need_warm_reset = (get_dload_mode() || in_panic ||
 				(cmd != NULL && cmd[0] != '\0'));
 	}
 

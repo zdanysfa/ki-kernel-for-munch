@@ -5471,7 +5471,7 @@ static int __init init_lru_gen(void)
 	debugfs_create_file("lru_gen_full", 0444, NULL, NULL, &lru_gen_ro_fops);
 
 #ifdef CONFIG_PROC_FS
-	proc_create("mglru", 0666, NULL, &mglru_proc_fops);
+	proc_create("mglru", 0644, NULL, &mglru_proc_fops);
 #endif
 
 	return 0;
@@ -6740,8 +6740,12 @@ restart:
 
 	if (!sc.nr_reclaimed) {
 		count_vm_event(LRU_KSWAPD_NO_PROGRESS);
-		if (!lru_gen_enabled())
-			pgdat->kswapd_failures++;
+		/*
+		 * Count MGLRU too: with min_ttl_ms at its default of 0 nothing else
+		 * stops a kswapd that cannot progress, and direct reclaimers would
+		 * wait on it without a timeout in throttle_direct_reclaim().
+		 */
+		pgdat->kswapd_failures++;
 	}
 
 out:

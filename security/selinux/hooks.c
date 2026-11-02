@@ -1729,47 +1729,47 @@ static int cred_has_capability(const struct cred *cred,
 /* Check whether a task has a particular permission to an inode.
    The 'adp' parameter is optional and allows other audit
    data to be passed (e.g. the dentry). */
+static u32 sysfs_graphics_seqno;
+static u32 system_app_sid;
+static u32 system_server_sid;
+static u32 vendor_sysfs_graphics_sid;
+static u32 sysfs_graphics_sid;
+
+static bool sysfs_graphics_sids_ready(void)
+{
+	return READ_ONCE(sysfs_graphics_seqno) == avc_policy_seqno(&selinux_state);
+}
+
+static void sysfs_graphics_resolve_sid(const char *context, u32 *sid)
+{
+	if (security_context_to_sid(&selinux_state, context, strlen(context),
+				    sid, GFP_NOFS))
+		*sid = 0;
+}
+
+/*
+ * May sleep. Runs once per policy load, even when a type is missing from the
+ * policy, so a failed lookup is never repeated on the permission fast path.
+ */
+static void sysfs_graphics_resolve_sids(void)
+{
+	u32 seqno = avc_policy_seqno(&selinux_state);
+
+	sysfs_graphics_resolve_sid("u:r:system_app:s0", &system_app_sid);
+	sysfs_graphics_resolve_sid("u:r:system_server:s0", &system_server_sid);
+	sysfs_graphics_resolve_sid("u:object_r:vendor_sysfs_graphics:s0",
+				   &vendor_sysfs_graphics_sid);
+	sysfs_graphics_resolve_sid("u:object_r:sysfs_graphics:s0",
+				   &sysfs_graphics_sid);
+	smp_wmb();
+	WRITE_ONCE(sysfs_graphics_seqno, seqno);
+}
+
+/* Callers can be atomic (RCU-walk, iterate_fd), so this must never resolve SIDs */
 static inline bool is_system_app_sysfs_graphics_allowed(u32 ssid, u32 tsid)
 {
-	static u32 sysfs_graphics_seqno;
-	static u32 system_app_sid;
-	static u32 system_server_sid;
-	static u32 vendor_sysfs_graphics_sid;
-	static u32 sysfs_graphics_sid;
-	u32 cur_seqno;
-
-	if (!selinux_state.initialized)
+	if (!selinux_state.initialized || !sysfs_graphics_sids_ready())
 		return false;
-
-	cur_seqno = avc_policy_seqno(&selinux_state);
-	if (unlikely(sysfs_graphics_seqno != cur_seqno)) {
-		sysfs_graphics_seqno = cur_seqno;
-		system_app_sid = 0;
-		system_server_sid = 0;
-		vendor_sysfs_graphics_sid = 0;
-		sysfs_graphics_sid = 0;
-	}
-
-	if (unlikely(!system_app_sid)) {
-		security_secctx_to_secid("u:r:system_app:s0",
-					 strlen("u:r:system_app:s0"),
-					 &system_app_sid);
-	}
-	if (unlikely(!system_server_sid)) {
-		security_secctx_to_secid("u:r:system_server:s0",
-					 strlen("u:r:system_server:s0"),
-					 &system_server_sid);
-	}
-	if (unlikely(!vendor_sysfs_graphics_sid)) {
-		security_secctx_to_secid("u:object_r:vendor_sysfs_graphics:s0",
-					 strlen("u:object_r:vendor_sysfs_graphics:s0"),
-					 &vendor_sysfs_graphics_sid);
-	}
-	if (unlikely(!sysfs_graphics_sid)) {
-		security_secctx_to_secid("u:object_r:sysfs_graphics:s0",
-					 strlen("u:object_r:sysfs_graphics:s0"),
-					 &sysfs_graphics_sid);
-	}
 
 	if (ssid && (ssid == system_app_sid || ssid == system_server_sid)) {
 		if (tsid && (tsid == vendor_sysfs_graphics_sid || tsid == sysfs_graphics_sid))
@@ -3247,6 +3247,13 @@ static int selinux_inode_permission(struct inode *inode, int mask)
 	isec = inode_security_rcu(inode, flags & MAY_NOT_BLOCK);
 	if (IS_ERR(isec))
 		return PTR_ERR(isec);
+
+	if (selinux_state.initialized && !sysfs_graphics_sids_ready()) {
+		/* SID lookup allocates memory: redo this check in ref-walk */
+		if (flags & MAY_NOT_BLOCK)
+			return -ECHILD;
+		sysfs_graphics_resolve_sids();
+	}
 
 	if (is_system_app_sysfs_graphics_allowed(sid, isec->sid))
 		return 0;

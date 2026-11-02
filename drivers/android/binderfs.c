@@ -71,7 +71,8 @@ static const match_table_t tokens = {
 };
 
 static struct binder_features binder_features = {
-	.oneway_spam_detection = true,
+	/* BR_ONEWAY_SPAM_SUSPECT is never sent: do not advertise the feature */
+	.oneway_spam_detection = false,
 	.freeze_notification = true,
 };
 

@@ -2475,15 +2475,18 @@ EXPORT_SYMBOL(cpufreq_update_policy);
  * (Silver 300MHz, Gold 710.4MHz, Prime 844.8MHz) so processors can settle cleanly
  * into deep idle when untangled from userspace post_boot and boost daemons.
  */
-void ki_cpufreq_reset_idle_floors(int mode)
+int ki_cpufreq_reset_idle_floors(int mode)
 {
 	struct cpufreq_policy *policy;
+	int ret = 0;
 
 	for_each_active_policy(policy) {
 		struct cpufreq_policy new_policy;
 
-		if (!down_write_trylock(&policy->rwsem))
+		if (!down_write_trylock(&policy->rwsem)) {
+			ret = -EBUSY;
 			continue;
+		}
 		if (policy_is_inactive(policy)) {
 			up_write(&policy->rwsem);
 			continue;
@@ -2498,6 +2501,7 @@ void ki_cpufreq_reset_idle_floors(int mode)
 
 		up_write(&policy->rwsem);
 	}
+	return ret;
 }
 EXPORT_SYMBOL_GPL(ki_cpufreq_reset_idle_floors);
 

@@ -1245,6 +1245,43 @@ void thermal_cooling_device_unregister(struct thermal_cooling_device *cdev)
 }
 EXPORT_SYMBOL_GPL(thermal_cooling_device_unregister);
 
+/**
+ * thermal_cdev_replay_bypassed - re-evaluate cooling devices that dropped a request
+ *
+ * While Ki-Profile bypasses throttling, cooling drivers discard state > 0.
+ * The requester does not write the same level twice, so ask again on re-arm.
+ * thermal_list_lock is dropped around the update because set_cur_state takes
+ * the CPU hotplug lock, and hotplug can register cooling devices.
+ *
+ * ponytail: assumes cooling devices are not unregistered, true on this SoC.
+ */
+void thermal_cdev_replay_bypassed(void)
+{
+	struct thermal_cooling_device *cdev, *found;
+
+	do {
+		found = NULL;
+		mutex_lock(&thermal_list_lock);
+		list_for_each_entry(cdev, &thermal_cdev_list, node) {
+			if (READ_ONCE(cdev->throttle_bypassed)) {
+				found = cdev;
+				break;
+			}
+		}
+		mutex_unlock(&thermal_list_lock);
+		if (!found)
+			return;
+
+		mutex_lock(&found->lock);
+		WRITE_ONCE(found->throttle_bypassed, false);
+		found->updated = false;
+		mutex_unlock(&found->lock);
+		thermal_cdev_update(found);
+		/* Set again: bypass came back on, the next re-arm replays it */
+	} while (!READ_ONCE(found->throttle_bypassed));
+}
+EXPORT_SYMBOL_GPL(thermal_cdev_replay_bypassed);
+
 static void bind_tz(struct thermal_zone_device *tz)
 {
 	int i, ret;

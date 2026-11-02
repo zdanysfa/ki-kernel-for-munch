@@ -32,18 +32,7 @@ if [ ! -f "$CONF_PATH" ]; then
     chmod 666 "$CONF_PATH" 2>/dev/null
 fi
 
-# Ensure user tweak nodes have correct read/write permissions
-# Note: ki_profile maintains secure 0644/0200 root permissions; root apps/daemons access directly.
-chmod 666 /proc/mglru 2>/dev/null
-chmod 666 /proc/bypass_charging 2>/dev/null
-chmod 666 /sys/kernel/mm/lru_gen/* 2>/dev/null
-chmod 666 /sys/kernel/fast_charge/* 2>/dev/null
-chmod 666 /sys/kernel/dyn_fsync/* 2>/dev/null
-chmod 666 /sys/class/power_supply/battery/bypass_charging 2>/dev/null
-chmod 666 /sys/class/power_supply/battery/input_suspend 2>/dev/null
-chmod 666 /sys/kernel/wakelock_blocker/* 2>/dev/null
-chmod 666 /sys/devices/virtual/misc/boeffla_wakelock_blocker/* 2>/dev/null
-chmod 666 /sys/kernel/ki_profile/thermal_throttle 2>/dev/null
+# Control nodes keep their kernel permissions: ki, ki_daemon and the WebUI all run as root.
 
 # Apply configured tweaks
 if [ -x "$MODDIR/bin/ki" ]; then

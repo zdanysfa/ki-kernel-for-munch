@@ -3243,6 +3243,32 @@ static int smb5_batt_get_prop(struct power_supply *psy,
 	return 0;
 }
 
+static bool smb5_writer_is_foreign(void)
+{
+	return current_uid().val != 0 || strstr(current->comm, "charger-hal") != NULL;
+}
+
+/*
+ * In ColorOS / OxygenOS ports, vendor.oplus.hardware.charger-V6-service (charger-hal-pol)
+ * runs a 1-second polling loop that forcefully writes '0' to bypass_charging because the
+ * port does not have oplus.software.game.bypass_charge declared.
+ * Only a bypass armed by root is shielded, so any other owner can still release its own.
+ */
+static bool smb5_ignore_bypass_clear(struct smb_charger *chg, int val)
+{
+	return !val && READ_ONCE(chg->bypass_user_owned) && smb5_writer_is_foreign();
+}
+
+static int smb5_set_user_bypass(struct smb_charger *chg, int val)
+{
+	int rc = smblib_set_bypass(chg, !!val);
+
+	if (rc >= 0 && val && !smb5_writer_is_foreign())
+		WRITE_ONCE(chg->bypass_user_owned, true);
+
+	return rc;
+}
+
 static int smb5_batt_set_prop(struct power_supply *psy,
 		enum power_supply_property prop,
 		const union power_supply_propval *val)
@@ -3255,7 +3281,7 @@ static int smb5_batt_set_prop(struct power_supply *psy,
 		rc = smblib_set_prop_batt_status(chg, val);
 		break;
 	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
-		if (val->intval == 0 && (current_uid().val != 0 || strstr(current->comm, "charger-hal") != NULL)) {
+		if (smb5_ignore_bypass_clear(chg, val->intval)) {
 			pr_debug("SMB5: ignoring input_suspend=0 from %s (uid=%u)\n",
 				current->comm, current_uid().val);
 			break;
@@ -3439,19 +3465,13 @@ static ssize_t bypass_charging_store(struct device *dev,
 	if (kstrtoint(buf, 10, &val))
 		return -EINVAL;
 
-	/*
-	 * In ColorOS / OxygenOS ports, vendor.oplus.hardware.charger-V6-service (charger-hal-pol)
-	 * runs a 1-second polling loop that forcefully writes '0' to bypass_charging because the
-	 * port does not have oplus.software.game.bypass_charge declared.
-	 * Ignore non-root / charger-hal-pol writes of '0' when user bypass is active.
-	 */
-	if (val == 0 && (current_uid().val != 0 || strstr(current->comm, "charger-hal") != NULL)) {
+	if (smb5_ignore_bypass_clear(chg, val)) {
 		pr_debug("SMB5: ignoring bypass_charging=0 from %s (uid=%u)\n",
 			current->comm, current_uid().val);
 		return count;
 	}
 
-	rc = smblib_set_bypass(chg, !!val);
+	rc = smb5_set_user_bypass(chg, val);
 	if (rc < 0)
 		return rc;
 
@@ -3460,8 +3480,7 @@ static ssize_t bypass_charging_store(struct device *dev,
 static DEVICE_ATTR_RW(bypass_charging);
 
 /*
- * Non-root userspace control interface via /proc/bypass_charging
- * Allows Termux, Tasker, shell scripts, and unprivileged apps to toggle bypass mode.
+ * Root-only control interface via /proc/bypass_charging (ki, ki_daemon, WebUI).
  */
 static ssize_t bypass_proc_read(struct file *file, char __user *buf,
 		size_t count, loff_t *ppos)
@@ -3494,7 +3513,10 @@ static ssize_t bypass_proc_write(struct file *file, const char __user *buf,
 	if (kstrtoint(strim(kbuf), 10, &val))
 		return -EINVAL;
 
-	rc = smblib_set_bypass(__smbchg, !!val);
+	if (smb5_ignore_bypass_clear(__smbchg, val))
+		return count;
+
+	rc = smb5_set_user_bypass(__smbchg, val);
 	if (rc < 0)
 		return rc;
 
@@ -3804,8 +3826,8 @@ static int smb5_init_batt_psy(struct smb5 *chip)
 	g_smb_chg = chg;
 	__smbchg = chg;
 
-	proc_create("bypass_charging", 0666, NULL, &bypass_proc_fops);
-	proc_create("fast_charge", 0666, NULL, &fast_charge_proc_fops);
+	proc_create("bypass_charging", 0644, NULL, &bypass_proc_fops);
+	proc_create("fast_charge", 0644, NULL, &fast_charge_proc_fops);
 
 	chg->screen_nb.notifier_call = smblib_screen_notifier_cb;
 	rc = mi_drm_register_client(&chg->screen_nb);
