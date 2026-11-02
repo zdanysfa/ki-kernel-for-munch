@@ -187,7 +187,9 @@ static int soc_compr_open_fe(struct snd_compr_stream *cstream)
 	fe->dpcm[stream].state = SND_SOC_DPCM_STATE_OPEN;
 	fe->dpcm[stream].runtime_update = SND_SOC_DPCM_UPDATE_NO;
 
+	mutex_lock_nested(&fe->pcm_mutex, fe->pcm_subclass);
 	snd_soc_runtime_activate(fe, stream);
+	mutex_unlock(&fe->pcm_mutex);
 
 	mutex_unlock(&fe->card->mutex);
 
@@ -311,7 +313,9 @@ static int soc_compr_free_fe(struct snd_compr_stream *cstream)
 	else
 		stream = SNDRV_PCM_STREAM_CAPTURE;
 
+	mutex_lock_nested(&fe->pcm_mutex, fe->pcm_subclass);
 	snd_soc_runtime_deactivate(fe, stream);
+	mutex_unlock(&fe->pcm_mutex);
 
 	fe->dpcm[stream].runtime_update = SND_SOC_DPCM_UPDATE_FE;
 
