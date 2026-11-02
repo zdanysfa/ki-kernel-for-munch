@@ -887,7 +887,7 @@ static int fg_get_manu_info(unsigned char val, int base, int step)
 
 static int fg_get_manufacture_data(struct bq_fg_chip *bq)
 {
-	u8 t_buf[40];
+	u8 t_buf[40] = {0};	/* every read can fail on a non-original gauge */
 	int ret;
 	int i;
 	int byte, base, step;
@@ -2552,6 +2552,10 @@ static int fg_get_raw_soc(struct bq_fg_chip *bq)
 	rm = fg_read_rm(bq);
 	fcc = fg_read_fcc(bq);
 
+	/* FCC reads 0 with no learned capacity or a failed first read: not an empty battery */
+	if (fcc <= 0)
+		return fg_read_rsoc(bq) * 100;
+
 	//raw_soc = DIV_ROUND_CLOSEST(rm * 10000 / fcc, 100);
 	raw_soc = rm * 10000 / fcc;
 
@@ -3016,12 +3020,13 @@ static int bq_fg_probe(struct i2c_client *client,
 	if (!bq->regmap)
 		return -ENODEV;
 
+	mutex_init(&bq->i2c_rw_lock);
+	mutex_init(&bq->data_lock);
+
 	fg_get_manufacture_data(bq);
 	fg_set_fastcharge_mode(bq, false);
 	bq->verify_digest_success = true;
 
-	mutex_init(&bq->i2c_rw_lock);
-	mutex_init(&bq->data_lock);
 	device_init_wakeup(bq->dev, 1);
 
 	fg_psy_register(bq);
